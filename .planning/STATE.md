@@ -1,11 +1,12 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Foundation & Architecture
-status: planning
-last_updated: "2026-05-25T14:24:00.000Z"
+milestone_name: milestone
+status: Defining requirements
+last_updated: "2026-05-25T19:08:58.056Z"
+last_activity: 2026-05-25 — Milestone v1.1 started
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
