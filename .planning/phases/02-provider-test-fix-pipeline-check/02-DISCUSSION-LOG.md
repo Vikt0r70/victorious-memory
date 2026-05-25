@@ -45,6 +45,14 @@
 **User's choice:** 400 Bad Request
 **Notes:** Standard HTTP semantics for client-side configuration errors.
 
+| Option | Description | Selected |
+|--------|-------------|----------|
+| max_tokens=20 | Current value. Sufficient for "Say hello in one word". | |
+| max_tokens=5 | Cost-conscious health probe. Validates connectivity without burning tokens. (LiteLLM pattern.) | ✓ |
+
+**User's choice:** max_tokens=5
+**Notes:** Research confirmed this is standard practice in mature projects (LiteLLM, etc.).
+
 ---
 
 ## Pipeline Verification Method

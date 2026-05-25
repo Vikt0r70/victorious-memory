@@ -22,6 +22,7 @@ Fix the broken provider test endpoint (PROV-06) and verify the ingestion pipelin
 - **D-02:** Treat "no provider configured at all" (no DB config + no env fallback) and "provider exists but API key is empty" as the same error category. Return a single unified error message.
 - **D-03:** Validation logic lives in `ProviderGateway` (reusable across test endpoint and extraction worker). Add a validation method or integrate checks into the existing `complete()` flow.
 - **D-04:** Return **400 Bad Request** for all configuration errors (missing/empty API key, no provider configured). Return 502 for provider HTTP errors, 504 for timeouts.
+- **D-05:** Use `max_tokens=5` for the provider test call (not 20). This is a cost-conscious health probe pattern used by LiteLLM and other mature projects — validates connectivity without burning tokens.
 
 ### Pipeline Verification Method
 - **D-05:** Use **both** a synthetic verification script and a real OpenCode plugin test. The synthetic script provides fast, repeatable validation; the real plugin test confirms actual integration.
