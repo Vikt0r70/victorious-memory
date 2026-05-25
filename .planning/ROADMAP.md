@@ -14,6 +14,9 @@
 2. All containers report healthy within 30 seconds
 3. Brave MCnulty container identified and documented
 4. `GET /health` returns 200 on the API
+**Plans:** 1 plan
+Plans:
+- [ ] 01-01-PLAN.md — Add api healthcheck, verify stack health, identify Brave MCnulty
 
 ### Phase 2: Provider Test Fix & Pipeline Check
 **Goal:** Fix the broken provider test endpoint (should fail without API key) and verify the ingestion pipeline works.
