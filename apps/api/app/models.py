@@ -358,6 +358,9 @@ class Agent(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     role: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    primary_provider_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("providers.id"), nullable=True
+    )
     fallback_provider_ids: Mapped[list[str]] = mapped_column(
         JSONB, server_default="[]", default=list
     )
