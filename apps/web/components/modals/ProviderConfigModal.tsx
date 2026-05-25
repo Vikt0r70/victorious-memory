@@ -86,6 +86,8 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showTemplatePicker, setShowTemplatePicker] = useState(mode === "template" && !provider);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   // Auto-fill when provider type changes (only in custom mode, not editing existing)
   useEffect(() => {
@@ -98,6 +100,20 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
       }
     }
   }, [providerType, provider, showTemplatePicker]);
+
+  // Fetch available models when editing an existing provider
+  useEffect(() => {
+    if (provider?.id) {
+      setLoadingModels(true);
+      providersApi.listModels(provider.id)
+        .then((res: any) => {
+          const models = res.models?.map((m: any) => m.id || m.name) || [];
+          setAvailableModels(models);
+        })
+        .catch(() => setAvailableModels([]))
+        .finally(() => setLoadingModels(false));
+    }
+  }, [provider?.id]);
 
   const handleSelectTemplate = (template: typeof TEMPLATES[0]) => {
     setSelectedTemplate(template.label);
@@ -291,12 +307,29 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#c7c4d7] mb-1.5">
               Model
             </label>
-            <input
-              className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] font-mono placeholder-[#908fa0] focus:outline-none focus:border-[#c0c1ff]"
-              placeholder="e.g. deepseek-v4-flash"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
+            {loadingModels ? (
+              <div className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#908fa0] font-mono">
+                Loading models...
+              </div>
+            ) : availableModels.length > 0 ? (
+              <select
+                className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] font-mono focus:outline-none focus:border-[#c0c1ff]"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="">Select a model...</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] font-mono placeholder-[#908fa0] focus:outline-none focus:border-[#c0c1ff]"
+                placeholder="e.g. gpt-4o"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            )}
           </div>
 
           {/* API Key */}
