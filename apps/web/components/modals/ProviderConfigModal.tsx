@@ -4,42 +4,35 @@ import { useState, useEffect } from "react";
 import { providersApi } from "@/lib/api";
 
 const PROVIDER_TYPES = [
-  { value: "openai_compatible", label: "OpenAI Compatible" },
+  { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "ollama", label: "Ollama" },
+  { value: "opencode", label: "OpenCode" },
   { value: "openrouter", label: "OpenRouter" },
   { value: "groq", label: "Groq" },
+  { value: "ollama", label: "Ollama" },
   { value: "custom", label: "Custom" },
 ];
 
 const TEMPLATES = [
   {
     label: "OpenAI",
-    provider_type: "openai_compatible",
+    provider_type: "openai",
     base_url: "https://api.openai.com/v1",
-    model: "gpt-4-turbo",
+    model: "gpt-4o",
     max_tokens: 2000,
   },
   {
     label: "Anthropic",
     provider_type: "anthropic",
     base_url: "https://api.anthropic.com/v1",
-    model: "claude-3-opus-20240229",
+    model: "claude-sonnet-4-6",
     max_tokens: 2000,
   },
   {
-    label: "DeepSeek",
-    provider_type: "deepseek",
-    base_url: "https://api.deepseek.com/v1",
-    model: "deepseek-chat",
-    max_tokens: 2000,
-  },
-  {
-    label: "Ollama",
-    provider_type: "ollama",
-    base_url: "http://localhost:11434/v1",
-    model: "llama3",
+    label: "OpenCode",
+    provider_type: "openai",
+    base_url: "http://localhost:7777/v1",
+    model: "gpt-5-mini",
     max_tokens: 2000,
   },
   {
@@ -54,6 +47,13 @@ const TEMPLATES = [
     provider_type: "groq",
     base_url: "https://api.groq.com/openai/v1",
     model: "llama3-8b-8192",
+    max_tokens: 2000,
+  },
+  {
+    label: "Ollama",
+    provider_type: "ollama",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3",
     max_tokens: 2000,
   },
   {
@@ -74,7 +74,7 @@ interface Props {
 
 export default function ProviderConfigModal({ provider, mode = "custom", onClose, onSaved }: Props) {
   const [name, setName] = useState(provider?.name || "");
-  const [providerType, setProviderType] = useState(provider?.provider_type || "openai_compatible");
+  const [providerType, setProviderType] = useState(provider?.provider_type || "openai");
   const [baseUrl, setBaseUrl] = useState(provider?.base_url || "");
   const [model, setModel] = useState(provider?.model || "");
   const [apiKey, setApiKey] = useState("");
