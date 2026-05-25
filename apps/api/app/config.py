@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5-mini"
     llm_api_key: str = ""
 
+    # Encryption key for Fernet-encrypting stored provider API keys
+    provider_key_encryption_key: str = ""
+
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8080

@@ -11,3 +11,4 @@ pgdata/
 *.db
 .agent/
 .opencode/
+.encryption_key
