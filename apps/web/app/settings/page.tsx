@@ -43,7 +43,7 @@ interface UsageLog {
   provider_id: string;
   provider_name: string;
   model: string;
-  tokens_used: number;
+  total_tokens: number;
   latency_ms: number;
   status: string;
   created_at: string;
@@ -659,7 +659,7 @@ export default function SettingsPage() {
                           </td>
                           <td className="p-3 text-[#c7c4d7]">{log.provider_name || log.provider_id}</td>
                           <td className="p-3 text-[#c7c4d7] font-mono">{log.model || "—"}</td>
-                          <td className="p-3 text-right text-[#c7c4d7] font-mono">{log.tokens_used?.toLocaleString() || "—"}</td>
+                          <td className="p-3 text-right text-[#c7c4d7] font-mono">{log.total_tokens?.toLocaleString() || "—"}</td>
                           <td className="p-3 text-right text-[#c7c4d7] font-mono">{log.latency_ms ? `${log.latency_ms}ms` : "—"}</td>
                           <td className="p-3">
                             <span className={`badge border ${
