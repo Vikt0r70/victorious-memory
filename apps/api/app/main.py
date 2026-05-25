@@ -57,6 +57,8 @@ from app.domains.context.router import router as context_router
 from app.domains.memories.router import router as memories_router
 from app.domains.projects.router import router as projects_router
 from app.domains.providers.router import router as providers_router
+from app.domains.providers.router import agents_router
+from app.domains.providers.router import usage_router
 from app.domains.activity_router import router as activity_router
 from app.domains.jobs_router import router as jobs_router
 from app.domains.exchanges_router import router as exchanges_router
@@ -69,12 +71,23 @@ app.include_router(context_router, prefix="/api")
 app.include_router(memories_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
 app.include_router(providers_router, prefix="/api")
+app.include_router(agents_router, prefix="/api")
+app.include_router(usage_router, prefix="/api")
 app.include_router(activity_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
 app.include_router(exchanges_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(system_router, prefix="/api")
+
+
+@app.on_event("startup")
+async def startup():
+    from app.database import async_session
+    from app.domains.providers.service import seed_default_agents
+    async with async_session() as session:
+        await seed_default_agents(session)
+        await session.commit()
 
 
 @app.get("/health")
