@@ -22,42 +22,49 @@ Automatically extract and surface relevant knowledge from developer conversation
 - ✓ OpenCode plugin (5 hooks) — existing
 - ✓ Background extraction worker (asyncio) — existing
 - ✓ Docker Compose deployment — existing
+- ✓ Docker stack health and container audit (Phase 1) — v1.0
 
 ### Active
 
-- [ ] **VER-01**: End-to-end verification — confirm extraction pipeline works from plugin → ingest → LLM → storage → context retrieval
 - [ ] **PROV-01**: Unified provider registry — configure providers once in a dedicated tab, agents select from registry
 - [ ] **PROV-02**: Dynamic model list — fetch available models from provider APIs instead of manual text input
 - [ ] **PROV-03**: Provider test validation — test endpoint returns actual error when API key is missing/invalid
 - [ ] **PROV-04**: Auto-detect provider type schema — build correct JSON payload per provider (OpenAI, Anthropic, OpenRouter, custom)
 - [ ] **PROV-05**: Lock roles per agent — extraction/edge-detection/consolidation roles should be fixed per agent, not editable
-- [ ] **PROV-ARCH**: Adopt LiteLLM as provider abstraction layer — handles schema translation, model discovery, multi-provider support
-- [ ] **UX-01**: Fix hover cursor indicators on all clickable elements (allowed types, review queue buttons, settings)
-- [ ] **UX-02**: Fix memory repository table layout shift when filters/content types are selected
-- [ ] **UX-03**: Review queue buttons (Approve High, Reject) should display as proper buttons with cursor pointer
-- [ ] **UX-04**: Fix auto-approve section allowed types click behavior and visual feedback
-- [ ] **SYS-01**: Verify Docker Compose stack starts cleanly (api, db, embed, web, mcp)
-- [ ] **SYS-02**: Verify plugin connectivity — confirm exchanges reach the API and jobs are created
-- [ ] **SYS-03**: Verify extraction worker processes jobs and creates memories
-- [ ] **SYS-04**: Verify context injection returns relevant memories
-- [ ] **SYS-05**: Identify and document the "Brave MCnulty" container purpose
-- [ ] **SYS-06**: Verify memory lifecycle (decay, consolidation, conflict detection) actually executes
-- [ ] **SYS-07**: Verify plugin configuration changes take effect in the background
+- [ ] **PROV-06**: Usage logging — track token usage per provider, agent role, and call
+- [ ] **PROV-07**: Fallback chains — support multiple providers per role with priority-based failover
+- [ ] **PROV-08**: Pre-configured provider templates — OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Custom
+- [ ] **UX-01**: Dashboard redesign — full UI overhaul, not just fixes
+- [ ] **UX-02**: Graph visualization redesign — current implementation is inadequate
+- [ ] **UX-03**: Review queue — functional memory approval/rejection workflow in UI
+- [ ] **UX-04**: All buttons and functions wired — every interactive element works correctly
+- [ ] **ML-01**: Memory decay — confidence scores decrease over time based on relevance
+- [ ] **ML-02**: Memory consolidation — detect related/duplicate memories and suggest merges
+- [ ] **ML-03**: Conflict detection — identify contradictory memories
+- [ ] **SYS-01**: Deployment ready — Docker stack deploys cleanly on any device
+- [ ] **SYS-02**: Plugin/MCP distribution — npm-hosted plugin, easy MCP install
+- [ ] **SYS-03**: E2E testing — comprehensive test suite and CI/CD pipeline
+- [ ] **SYS-04**: Documentation — API docs, README, agent/user guides
+- [ ] **SYS-05**: Data export — export memories and data
+- [ ] **ARCH-01**: Best-in-class RAG — optimize retrieval architecture
+- [ ] **ARCH-02**: Best-in-class graph — optimize graph system for memory relationships
+- [ ] **ARCH-03**: Best-in-class semantic search — optimize vector search and embeddings
+- [ ] **ARCH-04**: Dynamic memory types — research and implement dynamic/project-based memory types
 
 ### Out of Scope
 
-- Dashboard redesign — keep current layout, fix functionality only
 - Raw extraction UI redesign — keep as-is for now
-- Graph visualization redesign — verify it works, defer redesign
-- New memory types or extraction logic changes
-- Authentication/authorization for the API
-- Mobile app or mobile-responsive redesign
+- Authentication/authorization for the API — localhost-only, not needed
+- Mobile app or mobile-responsive redesign — desktop-first
+- Data import — too complex for this milestone
+- Multi-user support — single-user system
+- Cloud deployment automation — local desktop first
 
 ## Context
 
 **Brownfield project.** Existing code at `apps/api/` (Python FastAPI), `apps/web/` (Next.js 16), `apps/mcp/` (Python MCP server), `apps/plugin/` (JavaScript OpenCode plugin). Deployed via Docker Compose with PostgreSQL 16 + pgvector, HuggingFace TEI embeddings, and configurable LLM providers.
 
-**Current state:** The architecture is solid but the web dashboard UX has accumulated issues — inconsistent cursor indicators, layout shifts, broken test flows, and a provider configuration model that forces per-agent setup instead of a shared registry. The extraction pipeline and memory lifecycle have never been verified end-to-end.
+**Current state:** The architecture is solid but the web dashboard UX needs a complete overhaul — graph visualization is inadequate, interactive elements are broken, and the provider configuration model forces per-agent setup instead of a shared registry. The extraction pipeline and memory lifecycle have never been verified end-to-end. Provider architecture needs LiteLLM integration for proper multi-provider support.
 
 **Known technical concerns:**
 - Provider gateway uses module-level singleton; provider test returns OK 200 with no API key
@@ -65,6 +72,7 @@ Automatically extract and surface relevant knowledge from developer conversation
 - Models are in a single monolithic file (anti-pattern noted but deferred)
 - No authentication on the API (CORS allows all origins)
 - Agent output storage may be too verbose (large DB rows, high token costs)
+- Graph visualization is inadequate for the memory relationship model
 
 ## Constraints
 
@@ -78,11 +86,11 @@ Automatically extract and surface relevant knowledge from developer conversation
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Adopt LiteLLM as provider abstraction layer | 100+ providers instantly, schema handling, model discovery — eliminates custom provider engineering | — In Progress (Phase 2/5) |
-| Unified provider registry over per-agent configs | Reduces setup friction, better UX | — Pending (Phase 5) |
+| Adopt LiteLLM as provider abstraction layer | 100+ providers instantly, schema handling, model discovery — eliminates custom provider engineering | — In Progress (Phase 2) |
+| Unified provider registry over per-agent configs | Reduces setup friction, better UX | — Pending |
 | Dynamic model lists via provider API calls | Eliminates manual model name entry, stays current | — Pending (satisfied by LiteLLM) |
-| Keep current dashboard layout | Focus on fixing what's broken, not redesign | — Pending |
-| Fix UX issues before adding features | Broken UX erodes trust in the system | — Pending |
+| Full dashboard redesign | Current UI has accumulated too many issues — better to rebuild than patch | — Pending |
+| Data import excluded | Too complex for this milestone — focus on export first | — Pending |
 
 ## Evolution
 
@@ -101,5 +109,18 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
+## Current Milestone: v1.1 Foundation & Architecture
+
+**Goal:** Build a solid foundation with best-in-class provider architecture, complete dashboard redesign, working memory lifecycle, and deployment-ready Docker stack.
+
+**Target features:**
+- Complete LiteLLM provider integration with usage logging and fallback chains
+- Full dashboard redesign with working graph visualization
+- Memory decay, consolidation, and conflict detection
+- Dynamic memory types based on research
+- Portable Docker deployment
+- Plugin/MCP distribution
+- Comprehensive testing and documentation
+
 ---
-*Last updated: 2026-05-25 after initialization*
+*Last updated: 2026-05-25 after v1.1 milestone initialization*

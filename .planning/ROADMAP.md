@@ -1,146 +1,101 @@
 # Roadmap: Victorious Memory V2
 
 **Created:** 2026-05-25
-**Granularity:** Fine (12 phases)
+**Granularity:** Fine (6 phases)
+**Milestone:** v1.1 Foundation & Architecture
 
 ---
 
-### Phase 1: Stack Health & Container Audit
+### Phase 1: Provider System & Architecture
 
-**Goal:** Confirm the Docker Compose stack starts cleanly and all services are healthy. Identify the unknown Brave MCnulty container.
+**Goal:** Integrate LiteLLM as the provider abstraction layer and build a complete provider management system with usage logging and fallback chains.
 **Mode:** mvp
-**Requirements:** SYS-01, SYS-07
-**Success Criteria**:
-
-1. `docker compose up -d` starts all containers without errors
-2. All containers report healthy within 30 seconds
-3. Brave MCnulty container identified and documented
-4. `GET /health` returns 200 on the API
-
-**Plans:** 1 planPlans:
-
-- [x] 01-01-PLAN.md — Add api healthcheck, verify stack health, identify Brave MCnulty
-
-### Phase 2: Provider Test Fix & Pipeline Check
-
-**Goal:** Fix the broken provider test endpoint (should fail without API key) and verify the ingestion pipeline works.
-**Mode:** mvp
-**Requirements:** PROV-06, SYS-02, PLG-01
-**Success Criteria**:
-
-1. Provider test returns 4xx/5xx error when API key is missing or invalid
-2. Plugin captures a real exchange and POSTs to /api/ingest
-3. Exchange rows and extraction jobs with status "pending" appear in DB
-4. Activity log records the ingestion event
-
-### Phase 3: Extraction Pipeline End-to-End
-
-**Goal:** Verify the extraction worker processes jobs end-to-end: LLM call → memory candidates → validation → storage.
-**Mode:** mvp
-**Requirements:** SYS-03
-**Success Criteria**:
-
-1. Worker claims pending jobs and calls the extraction agent
-2. LLM returns valid JSON with memory candidates
-3. Validator deduplicates, assigns confidence labels, decides auto-approve
-4. New memory rows with embeddings appear in the database
-5. Job status transitions: pending → processing → done
-
-### Phase 4: Context Retrieval Verification
-
-**Goal:** Confirm context injection works — GET /api/context returns relevant memories formatted for system prompt injection.
-**Mode:** mvp
-**Requirements:** SYS-04, PLG-02
-**Success Criteria**:
-
-1. `/api/context?query=database&project_id=X` returns a formatted block with 3 sections
-2. Project decisions section includes architecture/decision memories
-3. User preferences section includes global preference memories
-4. Relevant section includes hybrid search results
-5. Plugin injects the block into system prompt before messages
-
-### Phase 5: LiteLLM Integration & Provider Configuration UI
-
-**Goal:** Integrate LiteLLM as the provider abstraction layer and build a lightweight configuration UI on top of it.
-**Mode:** mvp
-**Requirements:** PROV-01, PROV-02, PROV-05, PROV-07, PROV-08
+**Requirements:** PROV-01, PROV-02, PROV-03, PROV-04, PROV-05, PROV-06, PROV-07, PROV-08
 **Success Criteria**:
 
 1. LiteLLM installed as pip dependency (`litellm` in `pyproject.toml`)
-2. `ProviderGateway` rewritten as thin wrapper around `litellm.acompletion()`
+2. `ProviderGateway` rewritten as thin wrapper around `litellm.acompletion()` and `litellm.Router`
 3. New "Providers" tab in settings with CRUD for provider configs
-4. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Custom
+4. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
 5. Agent settings show provider dropdown — roles fixed (read-only)
-6. LiteLLM handles all provider schemas internally (OpenAI, Anthropic, custom)
-7. Dynamic model lists via LiteLLM's model discovery (PROV-03 satisfied by LiteLLM)
-8. Provider schema auto-detection via LiteLLM (PROV-04 satisfied by LiteLLM)
+6. LiteLLM handles all provider schemas internally
+7. Dynamic model lists via LiteLLM's model discovery
+8. Usage logging table stores every call with tokens, timing, status
+9. Fallback chains support up to 4 providers per role with drag-and-drop priority
+10. Provider test returns meaningful error when API key is missing/invalid
 
-### Phase 6: UX Fixes Round 1 — Interactive Elements
+### Phase 2: Dashboard Redesign
 
-**Goal:** Fix cursor indicators, button styling, and clickable element feedback.
+**Goal:** Complete UI overhaul — fix all interactive elements, redesign graph visualization, and ensure every button works.
 **Mode:** mvp
-**Requirements:** UX-01, UX-02, UX-05
+**Requirements:** UX-01, UX-02, UX-03, UX-04
 **Success Criteria**:
 
-1. All clickable chips, tabs, and navigation items show `cursor: pointer` on hover
-2. Approve High and Reject buttons in review queue styled as proper buttons
-3. Buttons show hover state (background color change)
-4. Empty review queue shows "No memories pending review" with disabled buttons visible
-5. Allowed types chips in auto-approve section show selection state clearly
+1. All pages have consistent design language and dark mode
+2. Graph visualization uses best-in-class library with interactive node exploration
+3. Review queue shows pending memories with Approve/Reject buttons that work
+4. All clickable elements show proper cursor and hover states
+5. Memory repository table stable — no layout shifts when filtering
+6. Settings page fully functional with all sections working
+7. Navigation sidebar and routing work correctly
+8. Empty states handled gracefully across all pages
 
-### Phase 7: UX Fixes Round 2 — Layout Stability
+### Phase 3: Memory Lifecycle
 
-**Goal:** Fix table layout shift in memory repository and auto-approve section behavior.
+**Goal:** Implement decay, consolidation, and conflict detection processes.
 **Mode:** mvp
-**Requirements:** UX-03, UX-04
+**Requirements:** ML-01, ML-02, ML-03
 **Success Criteria**:
 
-1. Memory repository table position remains stable when filter chips are toggled
-2. Content type selector does not push table content down
-3. Filter area has fixed height with overflow or reserved space
-4. Auto-approve allowed types click toggles selection with clear visual feedback
-5. No jarring layout jumps in any settings section
-
-### Phase 8: Memory Lifecycle Verification
-
-**Goal:** Verify decay, consolidation, and conflict detection processes actually execute and produce results.
-**Mode:** mvp
-**Requirements:** SYS-05
-**Success Criteria**:
-
-1. Memory decay logic can be triggered and updates confidence scores
+1. Memory decay logic triggered periodically, updates confidence scores based on age and access
 2. Consolidation detects related/duplicate memories and suggests merges
-3. Conflict detection identifies contradictory memories (e.g., "use PostgreSQL" vs "use SQLite")
-4. Activity log records lifecycle events
+3. Conflict detection identifies contradictory memories and flags for review
+4. Activity log records all lifecycle events
 5. Lifecycle endpoints return correct status and results
+6. UI shows lifecycle status and allows manual triggering
 
-### Phase 9: Plugin & MCP Integration Verification
+### Phase 4: Deployment & Distribution
 
-**Goal:** Verify the plugin and MCP server are fully functional with real data flow.
+**Goal:** Make the system deployable on any device and distributable as plugin/MCP.
 **Mode:** mvp
-**Requirements:** SYS-06, PLG-03, PLG-04
+**Requirements:** SYS-01, SYS-02, SYS-03, SYS-04, SYS-05
 **Success Criteria**:
 
-1. Plugin token threshold configuration change takes effect within one exchange cycle
-2. MCP search_memories returns relevant results for a query
-3. MCP get_context returns formatted block matching API output
-4. MCP save_memory creates a memory with correct fields
-5. MCP list_memories and get_activity return accurate data
-6. Plugin flush behavior responds to dashboard config changes
+1. `docker compose up` starts all services cleanly on fresh machine
+2. Plugin published to npm registry with installation instructions
+3. MCP server installable via standard methods (npx, pip, etc.)
+4. E2E test suite covers: plugin → ingest → extract → store → context → inject
+5. CI/CD pipeline runs tests on every commit/PR
+6. All provider types can be configured and tested successfully
+7. No console errors in web dashboard
 
-### Phase 10: Cleanup & Final Verification
+### Phase 5: Documentation & Export
 
-**Goal:** Resolve any remaining issues, clean up temp files, verify the full system.
+**Goal:** Write comprehensive documentation and implement data export.
 **Mode:** mvp
-**Requirements:** (integration check — all previous requirements verified)
+**Requirements:** SYS-06, SYS-07
 **Success Criteria**:
 
-1. Full end-to-end test: plugin capture → ingest → extract → store → context retrieve → inject
-2. All provider types can be configured and tested successfully
-3. No console errors in web dashboard
-4. No orphaned Docker containers or volumes
-5. All temp files and debug artifacts removed
-6. README updated with verified quick-start instructions
+1. README updated with verified quick-start instructions
+2. API documentation covers all endpoints with examples
+3. User guide explains dashboard features and workflows
+4. Agent/developer guide covers architecture and integration
+5. Data export endpoint allows downloading memories as JSON/CSV
+6. Export includes metadata: timestamps, confidence, project, tags
+
+### Phase 6: Architecture Excellence
+
+**Goal:** Optimize core architecture components — RAG, graph, semantic search, and memory types.
+**Mode:** mvp
+**Requirements:** ARCH-01, ARCH-02, ARCH-03, ARCH-04
+**Success Criteria**:
+
+1. RAG pipeline optimized for relevance and latency
+2. Graph system uses best-in-class library for memory relationships
+3. Semantic search tuned with proper embeddings and ranking
+4. Research completed on dynamic memory type taxonomy
+5. Dynamic types implemented based on project context or memory content
+6. Architecture documented with decision records
 
 ---
 
@@ -148,24 +103,22 @@
 
 | Phase | Requirements | Count |
 |-------|-------------|-------|
-| 1: Stack Health | SYS-01, SYS-07 | 2 |
-| 2: Provider Test | PROV-06, SYS-02, PLG-01 | 3 |
-| 3: Extraction E2E | SYS-03 | 1 |
-| 4: Context Retrieval | SYS-04, PLG-02 | 2 |
-| 5: LiteLLM Integration | PROV-01, PROV-02, PROV-03, PROV-04, PROV-05, PROV-07, PROV-08 | 7 |
-| 6: UX Round 1 | UX-01, UX-02, UX-05 | 3 |
-| 7: UX Round 2 | UX-03, UX-04 | 2 |
-| 8: Memory Lifecycle | SYS-05 | 1 |
-| 9: Plugin & MCP | SYS-06, PLG-03, PLG-04 | 3 |
-| 10: Cleanup | Integration | — |
+| 1: Provider System | PROV-01→08 | 8 |
+| 2: Dashboard Redesign | UX-01→04 | 4 |
+| 3: Memory Lifecycle | ML-01→03 | 3 |
+| 4: Deployment & Distribution | SYS-01→05 | 5 |
+| 5: Documentation & Export | SYS-06, SYS-07 | 2 |
+| 6: Architecture Excellence | ARCH-01→04 | 4 |
 
-**Total:** 10 phases, 24 requirements, 100% coverage ✓
+**Total:** 6 phases, 26 requirements, 100% coverage ✓
 
 ## Architecture Change Log
 
 | Date | Change | Impact |
 |------|--------|--------|
-| 2026-05-25 | Adopted LiteLLM as provider abstraction layer | Phases 5-7 merged into single "LiteLLM Integration" phase (PROV-03, PROV-04 now satisfied by LiteLLM) |
+| 2026-05-25 | Adopted LiteLLM as provider abstraction layer | Phases 5-7 merged into single "Provider System" phase |
+| 2026-05-25 | Dashboard redesign moved from v2 to v1.1 | Added Phase 2 for complete UI overhaul |
+| 2026-05-25 | Memory lifecycle moved from v2 to v1.1 | Added Phase 3 for decay, consolidation, conflict detection |
 
 ---
 *Roadmap created: 2026-05-25*

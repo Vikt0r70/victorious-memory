@@ -1,19 +1,10 @@
 # Requirements: Victorious Memory V2
 
 **Defined:** 2026-05-25
+**Milestone:** v1.1 Foundation & Architecture
 **Core Value:** Automatically extract and surface relevant knowledge from developer conversations without manual effort.
 
-## v1 Requirements
-
-### System Verification
-
-- [ ] **SYS-01**: Docker Compose stack starts cleanly without errors (api, db, embed, web, mcp containers)
-- [ ] **SYS-02**: Plugin captures exchanges and POSTs to /api/ingest — exchange rows and extraction jobs appear in DB
-- [ ] **SYS-03**: Extraction worker picks up pending jobs, calls LLM, stores extracted memories with embeddings
-- [ ] **SYS-04**: GET /api/context returns a formatted context block with project decisions, preferences, and relevant memories
-- [ ] **SYS-05**: Memory lifecycle processes (decay, consolidation, conflict detection) execute when triggered
-- [ ] **SYS-06**: Plugin configuration changes (token threshold, flush behavior) take effect without restart
-- [ ] **SYS-07**: Identify and document the "Brave MCnulty" Docker container — its purpose, origin, and whether it's needed
+## v1.1 Requirements
 
 ### Provider Architecture
 
@@ -22,87 +13,90 @@
 - [ ] **PROV-03**: Dynamic model list — available models are fetched from provider's /v1/models endpoint, not manually typed
 - [ ] **PROV-04**: Provider type auto-detection — correct API schema and JSON payload built per provider type (OpenAI, Anthropic, OpenRouter, custom-compatible)
 - [ ] **PROV-05**: Role field is read-only per agent — extraction/edge-detection/consolidation roles are fixed, not editable by user
-- [ ] **PROV-06**: Provider test returns meaningful error when API key is missing, invalid, or endpoint unreachable (not OK 200)
-- [ ] **PROV-07**: Custom provider option with configurable name, base URL, and API key
-- [ ] **PROV-08**: Pre-configured provider list includes: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, and Custom
+- [ ] **PROV-06**: Usage logging — track every LLM call with provider, model, tokens, timing, and status
+- [ ] **PROV-07**: Fallback chains — support up to 4 providers per role with priority-based failover via LiteLLM Router
+- [ ] **PROV-08**: Pre-configured provider templates — OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
 
-### UX Fixes
+### Dashboard & UX
 
-- [ ] **UX-01**: All clickable elements show pointer cursor on hover (allowed types chips, settings sections, navigation items)
-- [ ] **UX-02**: Review queue "Approve High" and "Reject" display as styled buttons with proper cursor pointer
-- [ ] **UX-03**: Memory repository table does not shift position when filter chips or content type selectors are toggled
-- [ ] **UX-04**: Auto-approve section "allowed types" has clear visual feedback on click (color change, selection state) and shows it's interactive
-- [ ] **UX-05**: Empty states in review queue show "No memories pending review" with the buttons still visible but disabled
-
-### Plugin & Integration
-
-- [ ] **PLG-01**: Plugin auto-captures conversation exchanges on token threshold and flushes to API
-- [ ] **PLG-02**: Plugin injects context block from GET /api/context into system prompt before each message
-- [ ] **PLG-03**: MCP server tools (search_memories, get_context, save_memory, list_memories, get_activity) return correct data
-- [ ] **PLG-04**: Plugin settings changes in the dashboard are reflected in plugin behavior within one exchange cycle
-
-## v2 Requirements
-
-### Dashboard
-
-- Dashboard redesign with modern layout and information hierarchy
-- Graph visualization rewrite with interactive node exploration
-- Raw extraction data view redesign
+- [ ] **UX-01**: Full dashboard redesign — complete UI overhaul, not just fixes
+- [ ] **UX-02**: Graph visualization redesign — best-in-class graph system for memory relationships
+- [ ] **UX-03**: Review queue — functional memory approval/rejection workflow with error handling
+- [ ] **UX-04**: All buttons and functions wired — every interactive element works correctly
 
 ### Memory Lifecycle
 
-- Advanced decay algorithms with configurable thresholds
-- Automated consolidation of related memories
-- Conflict resolution UI for contradictory memories
-- Bulk operations on memories (tag, move, merge)
+- [ ] **ML-01**: Memory decay — confidence scores decrease over time based on relevance and access patterns
+- [ ] **ML-02**: Memory consolidation — detect related/duplicate memories and suggest merges
+- [ ] **ML-03**: Conflict detection — identify contradictory memories and flag them for review
+
+### System & Deployment
+
+- [ ] **SYS-01**: Deployment ready — Docker stack deploys cleanly on any device with docker compose up
+- [ ] **SYS-02**: Plugin distribution — plugin published to npm for easy OpenCode integration
+- [ ] **SYS-03**: MCP distribution — MCP server installable via standard methods
+- [ ] **SYS-04**: E2E testing — comprehensive test suite covering critical paths
+- [ ] **SYS-05**: CI/CD pipeline — automated testing on commits/PRs
+- [ ] **SYS-06**: Documentation — API docs, README with quick start, agent/user guides
+- [ ] **SYS-07**: Data export — export memories and system data
+
+### Architecture
+
+- [ ] **ARCH-01**: Best-in-class RAG — optimize retrieval-augmented generation architecture
+- [ ] **ARCH-02**: Best-in-class graph — optimize graph system for memory relationship exploration
+- [ ] **ARCH-03**: Best-in-class semantic search — optimize vector search and embedding strategy
+- [ ] **ARCH-04**: Dynamic memory types — research and implement dynamic/project-based memory type taxonomy
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Dashboard full redesign | Focus on fixing functionality, not visuals |
-| Graph visualization rewrite | Verify it works first, redesign later |
+| Dashboard full redesign | This IS in scope for v1.1 |
+| Graph visualization rewrite | This IS in scope for v1.1 |
 | Raw extraction UI redesign | Keep as-is, functional enough |
-| Authentication/authorization | Localhost-only, not needed for v1 |
+| Authentication/authorization | Localhost-only, not needed |
 | Mobile responsive layout | Desktop-first, web dashboard only |
-| New memory types | Use existing 10-type taxonomy |
+| New memory types | Use dynamic types from ARCH-04 |
 | Multi-user support | Single-user system |
 | Cloud deployment automation | Local desktop first |
+| Data import | Too complex for this milestone |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SYS-01 | Phase 1 | Pending |
-| SYS-02 | Phase 2 | Pending |
-| SYS-03 | Phase 3 | Pending |
+| PROV-01 | Phase 1 | Pending |
+| PROV-02 | Phase 1 | Pending |
+| PROV-03 | Phase 1 | Pending |
+| PROV-04 | Phase 1 | Pending |
+| PROV-05 | Phase 1 | Pending |
+| PROV-06 | Phase 1 | Pending |
+| PROV-07 | Phase 1 | Pending |
+| PROV-08 | Phase 1 | Pending |
+| UX-01 | Phase 2 | Pending |
+| UX-02 | Phase 2 | Pending |
+| UX-03 | Phase 2 | Pending |
+| UX-04 | Phase 2 | Pending |
+| ML-01 | Phase 3 | Pending |
+| ML-02 | Phase 3 | Pending |
+| ML-03 | Phase 3 | Pending |
+| SYS-01 | Phase 4 | Pending |
+| SYS-02 | Phase 4 | Pending |
+| SYS-03 | Phase 4 | Pending |
 | SYS-04 | Phase 4 | Pending |
-| SYS-05 | Phase 10 | Pending |
-| SYS-06 | Phase 11 | Pending |
-| SYS-07 | Phase 1 | Pending |
-| PROV-01 | Phase 5 | Pending |
-| PROV-02 | Phase 5 | Pending |
-| PROV-03 | Phase 6 | Pending |
-| PROV-04 | Phase 7 | Pending |
-| PROV-05 | Phase 5 | Pending |
-| PROV-06 | Phase 2 | Pending |
-| PROV-07 | Phase 5 | Pending |
-| PROV-08 | Phase 5 | Pending |
-| UX-01 | Phase 8 | Pending |
-| UX-02 | Phase 8 | Pending |
-| UX-03 | Phase 9 | Pending |
-| UX-04 | Phase 9 | Pending |
-| UX-05 | Phase 8 | Pending |
-| PLG-01 | Phase 2 | Pending |
-| PLG-02 | Phase 4 | Pending |
-| PLG-03 | Phase 11 | Pending |
-| PLG-04 | Phase 11 | Pending |
+| SYS-05 | Phase 4 | Pending |
+| SYS-06 | Phase 5 | Pending |
+| SYS-07 | Phase 5 | Pending |
+| ARCH-01 | Phase 6 | Pending |
+| ARCH-02 | Phase 6 | Pending |
+| ARCH-03 | Phase 6 | Pending |
+| ARCH-04 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 24 total
-- Mapped to phases: 24
+- v1.1 requirements: 27 total
+- Mapped to phases: 27
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-25*
-*Last updated: 2026-05-25 after initial definition*
+*Last updated: 2026-05-25 after v1.1 milestone definition*
