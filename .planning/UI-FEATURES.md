@@ -17,7 +17,7 @@
 | Recent activity feed | Last 10-20 system events (ingestions, approvals, extractions) | Required |
 | Quick action buttons | Add memory, run extraction, export data | Required |
 | Pending review count | Badge showing memories awaiting approval | Required |
-| System health status | API, DB, TEI connection status indicators | Required |
+| System health status | API, DB, TEI connection status indicators (evaluated on load/action, no background pinging) | Required |
 | Graph preview | Mini force-graph showing recent memory clusters | Optional |
 
 ---

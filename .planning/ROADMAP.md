@@ -14,7 +14,7 @@
 **Success Criteria**:
 
 1. LiteLLM installed as pip dependency (`litellm` in `pyproject.toml`)
-2. `ProviderGateway` rewritten as thin wrapper around `litellm.acompletion()` and `litellm.Router`
+2. `ProviderGateway` calls `litellm.acompletion()` directly with DB config — no custom adapters
 3. New "Providers" tab in settings with CRUD for provider configs
 4. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
 5. Agent settings show provider dropdown — roles fixed (read-only)
@@ -90,9 +90,9 @@
 **Requirements:** ARCH-01, ARCH-02, ARCH-03, ARCH-04
 **Success Criteria**:
 
-1. RAG pipeline optimized for relevance and latency
-2. Graph system uses best-in-class library for memory relationships
-3. Semantic search tuned with proper embeddings and ranking
+1. Single-stage dense RAG implemented — pgvector HNSW with cosine similarity, no multi-stage pipeline
+2. Graph system uses force-graph (Canvas + d3-force) for organic memory relationship exploration
+3. Semantic search uses pgvector HNSW with BGE-M3 embeddings via TEI — simple and effective
 4. Research completed on dynamic memory type taxonomy
 5. Dynamic types implemented based on project context or memory content
 6. Architecture documented with decision records

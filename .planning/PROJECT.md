@@ -15,7 +15,7 @@ Automatically extract and surface relevant knowledge from developer conversation
 - ✓ Conversation ingestion pipeline (POST /api/ingest) — existing
 - ✓ LLM extraction agent with provider gateway — existing
 - ✓ Memory storage with vector embeddings (pgvector) — existing
-- ✓ Hybrid search (semantic + BM25) — existing
+- ✓ Hybrid search (semantic + BM25) — existing (BM25 to be deprecated in favor of single-stage dense search)
 - ✓ Context injection into system prompt — existing
 - ✓ Web dashboard with dark mode — existing
 - ✓ MCP server (5 tools) — existing
@@ -116,6 +116,8 @@ Automatically extract and surface relevant knowledge from developer conversation
 | MCP distribution: npx | Recommended by user | — Pending |
 | CI/CD: GitHub Actions on every commit | User preference for automated testing | — Pending |
 | Embedding migration: start fresh | All existing data is test data | — Pending |
+| 5000-token accumulator | Batch-driven extraction triggered by token threshold, not per-message | — Pending |
+| Error-at-failure fallback | Handle provider errors at call site with try/except, not background health checks | — Pending |
 
 ## Evolution
 

@@ -14,7 +14,7 @@
 - [ ] **PROV-04**: Provider type auto-detection — correct API schema and JSON payload built per provider type (OpenAI, Anthropic, OpenRouter, custom-compatible)
 - [ ] **PROV-05**: Role field is read-only per agent — extraction/edge-detection/consolidation roles are fixed, not editable by user
 - [ ] **PROV-06**: Usage logging — track every LLM call with provider, model, tokens, timing, and status
-- [ ] **PROV-07**: Fallback chains — support up to 4 providers per role with priority-based failover via LiteLLM Router
+- [ ] **PROV-07**: Fallback chains — support up to 4 providers per role with priority-based failover via simple try/except loop
 - [ ] **PROV-08**: Pre-configured provider templates — OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
 
 ### Dashboard & UX
@@ -42,9 +42,9 @@
 
 ### Architecture
 
-- [ ] **ARCH-01**: Best-in-class RAG — optimize retrieval-augmented generation architecture
-- [ ] **ARCH-02**: Best-in-class graph — optimize graph system for memory relationship exploration
-- [ ] **ARCH-03**: Best-in-class semantic search — optimize vector search and embedding strategy
+- [ ] **ARCH-01**: Single-stage dense RAG — implement pgvector HNSW with cosine similarity for retrieval
+- [ ] **ARCH-02**: force-graph implementation — Canvas-based organic graph visualization with d3-force physics
+- [ ] **ARCH-03**: pgvector HNSW search — implement single-stage dense vector search with TEI-served BGE-M3 embeddings
 - [ ] **ARCH-04**: Dynamic memory types — research and implement dynamic/project-based memory type taxonomy
 
 ## Out of Scope
