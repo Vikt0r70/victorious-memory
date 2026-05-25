@@ -196,7 +196,7 @@ export default function SettingsPage() {
       prev.map((a) => {
         if (a.role !== role) return a;
         const current = a.fallback_provider_ids || [];
-        if (current.length >= 3) return a;
+        if (current.length >= 4) return a;
         return { ...a, fallback_provider_ids: [...current, ""] };
       })
     );
@@ -582,7 +582,7 @@ export default function SettingsPage() {
                       </div>
                     )}
 
-                    {fallbacks.length < 3 && (
+                    {fallbacks.length < 4 && (
                       <button
                         onClick={() => handleAddFallback(role.value)}
                         className="text-[12px] text-[#c0c1ff] hover:text-[#e1e0ff] flex items-center gap-1"
