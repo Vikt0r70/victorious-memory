@@ -1,92 +1,246 @@
-"""LLM Provider Gateway — routes completions to configured providers."""
+"""LLM Provider Gateway — routes completions to configured providers via LiteLLM."""
 
 from __future__ import annotations
 
-import httpx
-from sqlalchemy import select
+import time
+from typing import Any
 
-from app.config import settings
+import litellm
+from litellm.exceptions import (
+    APIConnectionError,
+    APIError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import async_session
+from app.domains.providers.encryption import decrypt_api_key
+from app.domains.providers.exceptions import (
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+)
+from app.domains.providers.service import create_usage_log, resolve_provider_chain
 from app.models import Provider
 
+# Re-export exceptions for backward compatibility.
+__all__ = [
+    "ProviderGateway",
+    "ProviderError",
+    "ProviderTimeoutError",
+    "ProviderAuthenticationError",
+    "ProviderRateLimitError",
+    "ProviderNotConfiguredError",
+    "gateway",
+]
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
-
-
-class ProviderError(Exception):
-    """General provider failure."""
-
-
-class ProviderTimeoutError(ProviderError):
-    """The provider did not respond in time."""
-
-
-class ProviderNotConfiguredError(ProviderError):
-    """No provider configured for the requested role."""
-
-
-# ---------------------------------------------------------------------------
-# Gateway
-# ---------------------------------------------------------------------------
+# Keep old exception name as an alias for backward compatibility.
+ProviderNotConfiguredError = ProviderError
 
 
 class ProviderGateway:
-    """Unified gateway for sending LLM completions.
-
-    Resolution order for a given *model_role*:
-    1. Look up ``provider_configs`` DB table for a row matching the role.
-    2. Fall back to ``settings.llm_base_url / llm_model / llm_api_key``.
-    """
+    """Unified gateway for sending LLM completions through LiteLLM with fallback chains."""
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=30.0)
+        # Ensure LiteLLM does not retry internally — we handle fallback chains ourselves.
+        litellm.num_retries = 0
 
     # ------------------------------------------------------------------
-    # Config resolution
+    # Chain resolution
     # ------------------------------------------------------------------
 
-    async def _resolve_config(
-        self, model_role: str
-    ) -> tuple[str, str, str, str, int]:
-        """Return ``(provider_type, base_url, model, api_key, max_tokens)``."""
-        async with async_session() as session:
-            stmt = select(Provider).where(Provider.name == model_role)
-            result = await session.execute(stmt)
-            cfg = result.scalar_one_or_none()
+    async def _resolve_chain(self, agent_role: str) -> list[Provider]:
+        """Return the ordered list of providers for *agent_role*."""
+        async with async_session() as db:
+            return await resolve_provider_chain(db, agent_role)
 
-        if cfg is not None:
-            return (
-                cfg.provider_type,
-                cfg.base_url.rstrip("/"),
-                cfg.model,
-                cfg.api_key_encrypted,
-                cfg.max_tokens,
+    # ------------------------------------------------------------------
+    # Usage logging
+    # ------------------------------------------------------------------
+
+    async def _log_usage(
+        self,
+        *,
+        db: AsyncSession,
+        provider: Provider,
+        agent_role: str,
+        response: Any | None,
+        fallback_position: int,
+        status: str,
+        latency_ms: int = 0,
+        error_message: str | None = None,
+    ) -> None:
+        """Write a usage log entry for a provider call."""
+        usage = getattr(response, "usage", None) if response else None
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+        total_tokens = getattr(usage, "total_tokens", 0) if usage else 0
+
+        await create_usage_log(
+            db=db,
+            provider_id=provider.id,
+            agent_role=agent_role,
+            model=provider.model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            latency_ms=latency_ms,
+            status=status,
+            fallback_position=fallback_position,
+            error_message=error_message,
+        )
+        await db.commit()
+
+    # ------------------------------------------------------------------
+    # Model completion (new API)
+    # ------------------------------------------------------------------
+
+    async def _complete_model(
+        self,
+        agent_role: str,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        response_format: dict[str, Any] | None = None,
+    ) -> litellm.ModelResponse:
+        """Send a chat completion through LiteLLM with provider fallback chain."""
+        providers = await self._resolve_chain(agent_role)
+
+        if not providers:
+            raise ProviderError(
+                f"No providers configured for role '{agent_role}'"
             )
 
-        # Fallback to global settings
-        if not settings.llm_base_url:
-            raise ProviderNotConfiguredError(
-                f"No provider configured for role '{model_role}' and no "
-                "default LLM base URL set."
-            )
+        last_error: Exception | None = None
 
-        return (
-            "openai",
-            settings.llm_base_url.rstrip("/"),
-            settings.llm_model,
-            settings.llm_api_key,
-            2000,
+        for position, provider in enumerate(providers):
+            try:
+                api_key = (
+                    decrypt_api_key(provider.api_key_encrypted)
+                    if provider.api_key_encrypted
+                    else ""
+                )
+                model_str = f"{provider.provider_type}/{provider.model}"
+                api_base = provider.base_url if provider.base_url else None
+
+                start = time.perf_counter()
+                response = await litellm.acompletion(
+                    model=model_str,
+                    messages=messages,
+                    api_key=api_key,
+                    api_base=api_base,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                    num_retries=0,
+                    timeout=30,
+                )
+                latency_ms = int((time.perf_counter() - start) * 1000)
+
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=response,
+                        fallback_position=position,
+                        status="success",
+                        latency_ms=latency_ms,
+                    )
+                return response
+            except AuthenticationError as exc:
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=None,
+                        fallback_position=position,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                raise ProviderAuthenticationError(
+                    f"Authentication failed for provider {provider.name}: {exc}"
+                ) from exc
+            except (
+                RateLimitError,
+                Timeout,
+                APIConnectionError,
+                ServiceUnavailableError,
+            ) as exc:
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=None,
+                        fallback_position=position,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                last_error = exc
+                continue
+            except APIError as exc:
+                # Covers 5xx and other provider API errors.
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=None,
+                        fallback_position=position,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                last_error = exc
+                continue
+            except (BadRequestError, NotFoundError) as exc:
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=None,
+                        fallback_position=position,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                raise ProviderError(
+                    f"Non-retryable error from provider {provider.name}: {exc}"
+                ) from exc
+            except Exception as exc:
+                # Catch-all for unexpected errors — log and try next provider.
+                async with async_session() as db:
+                    await self._log_usage(
+                        db=db,
+                        provider=provider,
+                        agent_role=agent_role,
+                        response=None,
+                        fallback_position=position,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                last_error = exc
+                continue
+
+        raise ProviderError(
+            f"All providers exhausted for role '{agent_role}'. "
+            f"Last error: {last_error}"
         )
 
     # ------------------------------------------------------------------
-    # Completion
+    # Backward-compatible completion (returns str)
     # ------------------------------------------------------------------
 
     async def complete(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         model_role: str = "extraction",
         response_format: str = "json",
@@ -97,7 +251,7 @@ class ProviderGateway:
         Parameters
         ----------
         messages:
-            OpenAI-style message list: ``[{"role": ..., "content": ...}]``
+            OpenAI-style message list.
         model_role:
             Logical role name used to look up provider config.
         response_format:
@@ -105,115 +259,26 @@ class ProviderGateway:
         max_tokens:
             Override the configured max_tokens if given.
         """
-        provider_type, base_url, model, api_key, cfg_max = await self._resolve_config(
-            model_role
+        fmt: dict[str, Any] | None = (
+            {"type": "json_object"} if response_format == "json" else None
         )
-        tok_limit = max_tokens or cfg_max
-
-        try:
-            if provider_type == "anthropic":
-                return await self._anthropic_complete(
-                    base_url, model, api_key, messages, tok_limit
-                )
-            return await self._openai_complete(
-                base_url, model, api_key, messages, tok_limit, response_format
-            )
-        except httpx.TimeoutException as exc:
-            raise ProviderTimeoutError(
-                f"Provider timed out for role '{model_role}'"
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise ProviderError(
-                f"Provider returned {exc.response.status_code}: "
-                f"{exc.response.text}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise ProviderError(
-                f"Provider unreachable: {exc}"
-            ) from exc
-
-    # ------------------------------------------------------------------
-    # OpenAI-compatible path
-    # ------------------------------------------------------------------
-
-    async def _openai_complete(
-        self,
-        base_url: str,
-        model: str,
-        api_key: str,
-        messages: list[dict[str, str]],
-        max_tokens: int,
-        response_format: str,
-    ) -> str:
-        headers: dict[str, str] = {}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        body: dict = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-        }
-        if response_format == "json":
-            body["response_format"] = {"type": "json_object"}
-
-        resp = await self._http.post(
-            f"{base_url}/chat/completions",
-            json=body,
-            headers=headers,
+        response = await self._complete_model(
+            agent_role=model_role,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=max_tokens or 4096,
+            response_format=fmt,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        content = response.choices[0].message.content
+        return content or ""
 
     # ------------------------------------------------------------------
-    # Anthropic path
+    # Old close() stub for compatibility
     # ------------------------------------------------------------------
-
-    async def _anthropic_complete(
-        self,
-        base_url: str,
-        model: str,
-        api_key: str,
-        messages: list[dict[str, str]],
-        max_tokens: int,
-    ) -> str:
-        headers: dict[str, str] = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-
-        # Anthropic separates system prompt from messages
-        system_text = ""
-        anthropic_msgs: list[dict[str, str]] = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system_text = msg["content"]
-            else:
-                anthropic_msgs.append(msg)
-
-        body: dict = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": anthropic_msgs,
-        }
-        if system_text:
-            body["system"] = system_text
-
-        resp = await self._http.post(
-            f"{base_url}/v1/messages",
-            json=body,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        # Anthropic returns content as a list of blocks
-        content_blocks = data.get("content", [])
-        return content_blocks[0]["text"] if content_blocks else ""
 
     async def close(self) -> None:
-        await self._http.aclose()
+        """No-op — kept for backward compatibility."""
+        pass
 
 
 # ---------------------------------------------------------------------------
