@@ -6,7 +6,13 @@
 
 ## Executive Summary
 
-VM2 needs four architectural upgrades: (1) **LiteLLM** replaces the custom provider gateway, (2) **Cytoscape.js** replaces the inadequate graph visualization, (3) **dynamic memory types** use PostgreSQL JSONB with a new `memory_types` table, and (4) **advanced RAG** upgrades pgvector, swaps the embedding model to a hybrid-capable model served via TEI, and adds a re-ranker stage. Most changes are additive — no existing stack components are removed.
+VM2 needs four architectural upgrades: (1) **LiteLLM** replaces the custom provider gateway, (2) **force-graph** replaces the inadequate graph visualization, (3) **dynamic memory types** use PostgreSQL JSONB with a new `memory_types` table, and (4) **simple RAG** uses pgvector HNSW for single-stage dense vector search. Most changes are additive — no existing stack components are removed.
+
+**Corrections from user review:**
+- RAG: Single-stage dense vector search (not multi-stage pipeline)
+- Graph: force-graph (not Cytoscape.js)
+- Health checks: Error-at-failure (not background pinging)
+- LiteLLM: Direct `litellm.acompletion()` (not custom adapters)
 
 ---
 
@@ -46,13 +52,45 @@ pip install litellm==1.86.0
 
 **Docker impact:** ~50-100MB image size increase due to compiled Rust extensions in `tiktoken`/`tokenizers`. Use multi-stage builds to mitigate.
 
+**No custom adapters:** Use `litellm.acompletion()` directly. Pass provider config from DB straight into the function. Do NOT build wrapper classes around LiteLLM.
+
 ---
 
 ## 2. Graph Visualization
 
-### Recommendation: Cytoscape.js
+### Recommendation: force-graph
 
-**Decision:** Use **Cytoscape.js v3.33.x** with the `react-cytoscapejs` wrapper for the memory relationship graph. Cytoscape.js is the industry standard for knowledge graph visualization — used by GitHub, Amazon, Google, Elastic, and Obsidian. It is purpose-built for network analysis and exploration, not workflow editing.
+**Decision:** Use **force-graph** (v1.x) with Canvas/WebGL renderer and d3-force physics engine for the memory relationship graph. This produces the organic, bouncy, "Obsidian-like" graph experience the user wants. force-graph uses HTML5 Canvas (not DOM/SVG) and can handle thousands of nodes smoothly.
+
+**Key packages:**
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `react-force-graph-2d` | ^1.25.0 | React wrapper for 2D force graph | Canvas-based, handles thousands of nodes, physics-based |
+| `d3-force` | ^3.0.0 | Physics simulation | Charges, links, collision, centering forces |
+
+**Installation (frontend):**
+```bash
+cd apps/web
+npm install react-force-graph-2d d3-force
+npm install -D @types/d3-force
+```
+
+**Why force-graph over Cytoscape.js:**
+
+| Criterion | force-graph | Cytoscape.js |
+|-----------|-------------|--------------|
+| Renderer | Canvas/WebGL (fast) | Canvas (heavier) |
+| Physics | d3-force (bouncy, organic) | Layout algorithms (rigid) |
+| Node count | 10K+ smooth | Struggles at 5K+ |
+| Visual style | Free-floating, bouncy | Rigid, enterprise flowcharts |
+| React integration | Native component | Wrapper needed |
+| Bundle size | ~150KB | ~90KB + extensions |
+
+**VM2-specific rationale:**
+- Memory relationships should feel *organic* and *explorable*, not like a rigid org chart.
+- The user explicitly wants "bouncy, Obsidian-like" — force-graph delivers this out of the box.
+- Canvas renderer handles the "tens of thousands" scale target without browser freeze.
+- Click → open detail panel (no graph editing needed).
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
@@ -71,37 +109,14 @@ npm install cytoscape-fcose cytoscape-cose-bilkent cytoscape-popper cytoscape-da
 npm install -D @types/cytoscape
 ```
 
-### Why Cytoscape.js over React Flow
-
-| Criterion | Cytoscape.js | React Flow |
-|-----------|--------------|------------|
-| Primary use case | Network analysis, knowledge graphs | Node-based UIs, workflow builders |
-| Layout algorithms | 15+ built-in + extensions | Requires external libs (dagre, elk, d3-force) |
-| Compound nodes | Native (groups/clusters) | Sub-flows (more complex) |
-| Graph algorithms | BFS, DFS, PageRank, centrality, etc. | None |
-| Performance at 500+ nodes | Smooth (Canvas renderer) | Slower (DOM-based) |
-| React integration | Wrapper needed | Native |
-| Custom node UI | Canvas styling (less rich) | Full React components (richer) |
-| Bundle size | ~90KB minified + gizpped | ~180KB |
-
-**VM2-specific rationale:**
-- Memory relationships form a *network* to be *explored*, not a *workflow* to be *edited*.
-- Compound nodes let us group memories by project or type visually.
-- Graph algorithms (e.g., PageRank) can surface "important" memories.
-- Force-directed layout (`fcose`) is the standard for knowledge graphs (Obsidian uses similar).
-- The React wrapper is thin — we still control it via React state and refs.
-
-### Alternative: React Flow
-
-If future requirements shift toward *editing* the graph (dragging memories, manually creating edges, building workflows), **React Flow** (`@xyflow/react` v12.x) would be better. It is native React, supports rich custom nodes with Tailwind, and has built-in dark mode. For now, defer this unless UX-02 explicitly requires graph editing.
-
 ### Integration Points
 
 1. **Data source**: `/api/graph` endpoint (existing) returns nodes (memories) and edges (relationships).
-2. **React component**: Create `MemoryGraph.tsx` wrapping `<CytoscapeComponent>`.
-3. **Styling**: Use Cytoscape stylesheet (JSON) to map memory types to colors, confidence to node size, project to compound parent.
-4. **Dark mode**: Toggle `cy.style()` between light/dark palettes on theme change.
-5. **Interactivity**: Click → navigate to memory detail; hover → tooltip with content preview; filter → hide/show by type or project.
+2. **React component**: Create `MemoryGraph.tsx` using `<ForceGraph2D>`.
+3. **Styling**: Map memory types to colors, confidence to node size via canvas draw callbacks.
+4. **Dark mode**: Toggle canvas background and node colors on theme change.
+5. **Interactivity**: Click → open detail panel; hover → tooltip with content preview; filter → hide/show by type or project.
+6. **No manual edges**: Users cannot create/edit edges — graph is read-only exploration.
 
 ---
 
@@ -156,30 +171,25 @@ ALTER TABLE memories ADD COLUMN metadata JSONB DEFAULT '{}';
 
 ---
 
-## 4. Advanced Semantic Search & RAG Architecture
+## 4. Simple Semantic Search & RAG Architecture
 
 ### 4.1 Embedding Model Upgrade
 
 **Current:** `sentence-transformers` in-process with `BAAI/bge-small-en-v1.5` (384 dim). Blocks event loop.
 
-**Recommendation:** Move to **HuggingFace Text Embeddings Inference (TEI)** as a separate Docker service, with a hybrid-capable embedding model.
+**Recommendation:** Move to **HuggingFace Text Embeddings Inference (TEI)** as a separate Docker service, with a high-quality dense embedding model.
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
 | TEI (GPU) | `ghcr.io/huggingface/text-embeddings-inference:1.7.2` | Embedding inference server | OpenAI-compatible HTTP API, batches requests, GPU accelerated |
 | TEI (CPU) | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.7.2` | CPU fallback | Same API, no CUDA required |
-| BGE-M3 | `BAAI/bge-m3` (568M params) | Hybrid embedding model | Dense + sparse + ColBERT in one model; replaces custom BM25 |
+| BGE-M3 | `BAAI/bge-m3` (568M params) | Dense embedding model | 1024 dimensions, 8192 context, MIT license |
 | Qwen3-Embedding-0.6B | `Qwen/Qwen3-Embedding-0.6B` (0.6B params) | Alternative high-quality model | #1 MTEB multilingual, 32K context, instruction-aware |
-| BGE-Reranker-v2-M3 | `BAAI/bge-reranker-v2-m3` (8B params) | Cross-encoder reranker | Second-stage re-ranking for RAG |
-| Qwen3-Reranker-0.6B | `Qwen/Qwen3-Reranker-0.6B` (0.6B params) | Alternative reranker | Smaller, faster, still high quality |
 
-**Recommended combination for VM2:**
-- **Embedding:** `BGE-M3` via TEI. Its hybrid retrieval (dense + sparse lexical) eliminates VM2's custom Python BM25 implementation entirely. 1024 dimensions, 8192 context, MIT license.
-- **Reranker:** `Qwen3-Reranker-0.6B` via TEI (if TEI supports it) or `sentence-transformers` cross-encoder. Smaller and faster than BGE-Reranker-v2-M3 with excellent quality.
-
-**Alternative (maximum quality):**
-- **Embedding:** `Qwen3-Embedding-0.6B` via TEI. Best MTEB scores, 32K context, instruction-aware (boost RAG performance 1-5%).
-- Tradeoff: No built-in sparse vectors — would keep a simplified BM25 or use PostgreSQL full-text search for keyword matching.
+**Recommended for VM2:**
+- **Embedding:** `BGE-M3` via TEI. 1024 dimensions, dense vectors only. Simple and effective.
+- **No reranker:** Single-stage retrieval is sufficient. The 5000-token context window provides rich context regardless.
+- **No sparse vectors:** Dense HNSW search is enough. BM25 can be removed.
 
 ### Docker Compose Addition
 
@@ -211,17 +221,9 @@ For CPU-only deployments (local desktop first):
 | File | Change |
 |------|--------|
 | `app/domains/search/embeddings.py` | Replace in-process `sentence-transformers` with async HTTP client calling TEI at `EMBEDDING_URL` |
-| `app/domains/search/bm25.py` | **Deprecate** if using BGE-M3 sparse vectors; otherwise keep for fallback |
-| `app/domains/search/service.py` | Implement two-stage retrieval: (1) pgvector HNSW + sparse/RRF, (2) reranker API call |
-| `app/config.py` | Add `EMBEDDING_URL`, `EMBEDDING_MODEL`, `RERANKER_URL`, `RERANKER_MODEL` settings |
-
-### New Python Dependencies
-
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `rank-bm25` | ^0.2.2 | BM25 implementation (if keeping keyword search) | If NOT using BGE-M3 sparse vectors |
-
-No new dependencies needed for TEI integration — use existing `httpx` client.
+| `app/domains/search/bm25.py` | **Remove** — no longer needed with single-stage dense search |
+| `app/domains/search/service.py` | Single-stage retrieval: pgvector HNSW with cosine similarity |
+| `app/config.py` | Add `EMBEDDING_URL`, `EMBEDDING_MODEL` settings |
 
 ### 4.2 pgvector Optimization
 
@@ -229,7 +231,7 @@ No new dependencies needed for TEI integration — use existing `httpx` client.
 
 | Component | Current | Target | Why |
 |-----------|---------|--------|-----|
-| `pgvector` Python package | >=0.3.0 | >=0.8.2 | Iterative index scans, sparse vectors, halfvec improvements |
+| `pgvector` Python package | >=0.3.0 | >=0.8.2 | Iterative index scans, halfvec improvements |
 | PostgreSQL extension | pgvector v0.3+ | v0.8.2 | Same reasons |
 | PostgreSQL image | `pgvector/pgvector:pg16` | latest `pg16` tag | Ensure v0.8.2 is included |
 
@@ -240,86 +242,32 @@ No new dependencies needed for TEI integration — use existing `httpx` client.
 CREATE INDEX idx_memories_embedding_hnsw ON memories
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 128);
-
--- Optional: halfvec index for 50% memory reduction
-CREATE INDEX idx_memories_embedding_halfvec ON memories
-USING hnsw ((embedding::halfvec(1024)) halfvec_cosine_ops)
-WITH (m = 16, ef_construction = 128);
-
--- Full-text search for keyword fallback (if not using sparse vectors)
-CREATE INDEX idx_memories_fts ON memories
-USING gin(to_tsvector('english', content));
 ```
 
 **Query-time settings:**
 ```sql
-SET hnsw.ef_search = 100;        -- Better recall (default 40)
-SET hnsw.iterative_scan = strict_order;  -- pgvector 0.8.0+: auto-scan more for filtered queries
+SET hnsw.ef_search = 100;  -- Better recall (default 40)
 ```
 
-### 4.3 Hybrid Search Architecture
-
-**Current:** Python-level fusion: `0.7 * semantic_score + 0.3 * bm25_score`
-
-**Recommended:** Database-level Reciprocal Rank Fusion (RRF) for better accuracy and performance.
-
-```sql
--- RRF score function
-CREATE OR REPLACE FUNCTION rrf_score(rank int, k int DEFAULT 60)
-RETURNS numeric AS $$
-    SELECT COALESCE(1.0 / ($1 + $2), 0.0);
-$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
-
--- Hybrid query
-WITH semantic AS (
-    SELECT id, embedding <=> query_vec AS dist,
-           row_number() OVER (ORDER BY embedding <=> query_vec) AS rank
-    FROM memories
-    ORDER BY embedding <=> query_vec
-    LIMIT 100
-),
-keyword AS (
-    SELECT id, ts_rank_cd(to_tsvector('english', content), query) AS rank_score,
-           row_number() OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC) AS rank
-    FROM memories, plainto_tsquery('english', 'search terms') query
-    WHERE to_tsvector('english', content) @@ query
-    ORDER BY rank_score DESC
-    LIMIT 100
-)
-SELECT m.*,
-       COALESCE(rrf(s.rank), 0) + COALESCE(rrf(k.rank), 0) AS rrf_score
-FROM memories m
-LEFT JOIN semantic s ON m.id = s.id
-LEFT JOIN keyword k ON m.id = k.id
-WHERE s.id IS NOT NULL OR k.id IS NOT NULL
-ORDER BY rrf_score DESC
-LIMIT 20;
-```
-
-**If using BGE-M3 sparse vectors:** Store sparse vector in a `sparsevec` column and use pgvector's sparse vector distance operators (`<=>`, `<#>`) for lexical search, eliminating the need for `tsvector`/`plainto_tsquery`.
-
-### 4.4 Two-Stage Retrieval Pipeline
+### 4.3 Single-Stage Retrieval Pipeline
 
 ```
 User Query
     |
     v
-[Stage 1: Retrieval] --- Dense (pgvector HNSW) ---> Candidate Pool (top 100)
-                   |-- Sparse (pgvector sparsevec OR BM25) --->
-                   |-- RRF Fusion in SQL --->
-    v
-[Stage 2: Re-ranking] --- Cross-encoder (Qwen3-Reranker-0.6B via TEI) --->
-    v
-Final Results (top 10-20)
+[Embedding Client] --> TEI /embed --> Dense vector (1024-dim)
     |
     v
-Context Builder -> LLM Prompt
+[pgvector HNSW] --> Top 20-50 candidates (cosine similarity)
+    |
+    v
+Context Builder --> Formatted memory block --> LLM system prompt
 ```
 
 **Latency budget (local desktop):**
-- Stage 1 (pgvector HNSW + RRF): ~15-30ms
-- Stage 2 (reranker, 100 docs): ~200-500ms (CPU) or ~50-100ms (GPU)
-- Total: <1s acceptable for context injection
+- Embedding (TEI): ~50-100ms (CPU) or ~10-20ms (GPU)
+- pgvector HNSW: ~15-30ms
+- Total: <200ms for context retrieval — well within the <1s budget
 
 ---
 
@@ -348,15 +296,11 @@ dependencies = [
 ```json
 {
   "dependencies": {
-    "cytoscape": "^3.33.0",
-    "react-cytoscapejs": "^2.0.0",
-    "cytoscape-fcose": "^2.2.0",
-    "cytoscape-cose-bilkent": "^4.1.0",
-    "cytoscape-popper": "^2.0.0",
-    "cytoscape-dagre": "^2.5.0"
+    "react-force-graph-2d": "^1.25.0",
+    "d3-force": "^3.0.0"
   },
   "devDependencies": {
-    "@types/cytoscape": "^3.21.0"
+    "@types/d3-force": "^3.0.0"
   }
 }
 ```
@@ -379,13 +323,12 @@ services:
 
 | Area | Recommended | Alternative | Why Not |
 |------|-------------|-------------|---------|
-| Graph viz | Cytoscape.js | React Flow | React Flow is for workflow editors, not knowledge graph exploration |
-| Graph viz | Cytoscape.js | D3.js | D3 has steep learning curve, no built-in graph layouts, manual React integration |
-| Graph viz | Cytoscape.js | Sigma.js + Graphology | Better for 10K+ nodes; overkill for VM2's scale |
-| Embedding | BGE-M3 (TEI) | Qwen3-Embedding-0.6B | Qwen3 has higher MTEB but no built-in sparse vectors; requires keeping BM25 |
+| Graph viz | force-graph | Cytoscape.js | Cytoscape is rigid/enterprise; force-graph is bouncy/organic like Obsidian |
+| Graph viz | force-graph | React Flow | React Flow is for workflow editors, not knowledge graph exploration |
+| Graph viz | force-graph | D3.js from scratch | Too low-level; force-graph wraps d3-force with Canvas renderer |
+| Embedding | BGE-M3 (TEI) | Qwen3-Embedding-0.6B | Qwen3 has higher MTEB but 32K context is overkill; BGE-M3 is simpler |
 | Embedding | BGE-M3 (TEI) | In-process sentence-transformers | Blocks event loop, cannot serve multiple requests, model is outdated |
-| Reranker | Qwen3-Reranker-0.6B | BGE-Reranker-v2-M3 | BGE-Reranker is 8B params vs Qwen3's 0.6B; slower with marginal quality gain for VM2 |
-| Hybrid search | RRF in SQL | Weighted sum in Python | RRF is more robust, works at DB level, 15-30% better retrieval accuracy |
+| Search | Single-stage HNSW | RRF + reranker pipeline | Overkill for VM2; 5000-token context window provides rich context regardless |
 | Vector type | `vector` (full precision) | `halfvec` | `halfvec` is recommended for production; 50% memory reduction, minimal recall loss |
 
 ---
@@ -398,8 +341,8 @@ pip install litellm==1.86.0 openai==2.30.0 pgvector==0.8.2
 
 # Frontend
 cd apps/web
-npm install cytoscape react-cytoscapejs cytoscape-fcose cytoscape-cose-bilkent cytoscape-popper cytoscape-dagre
-npm install -D @types/cytoscape
+npm install react-force-graph-2d d3-force
+npm install -D @types/d3-force
 
 # TEI (run as Docker service, not pip)
 docker run --gpus all -p 8080:80 -v hf_cache:/data \
@@ -411,12 +354,12 @@ docker run --gpus all -p 8080:80 -v hf_cache:/data \
 
 ## 8. Integration Order
 
-1. **LiteLLM** (Phase 2, in progress) — Zero risk, replaces gateway internal implementation only.
-2. **pgvector upgrade + HNSW indexes** (Phase 2/3) — Low risk, additive index creation.
-3. **TEI embedding service** (Phase 3) — Medium risk; requires Docker Compose change, model download, async HTTP client rewrite.
-4. **Cytoscape.js graph** (Phase 3, UX-02) — Medium risk; new frontend component, but isolated from backend.
-5. **Dynamic memory types** (Phase 4, ARCH-04) — Medium risk; requires DB migration, prompt engineering changes, UI updates.
-6. **Reranker + advanced RAG** (Phase 4/5, ARCH-01/03) — Higher risk; adds latency, requires evaluation to measure improvement.
+1. **LiteLLM** (Phase 1) — Zero risk, replaces gateway internal implementation only.
+2. **pgvector upgrade + HNSW indexes** (Phase 1) — Low risk, additive index creation.
+3. **TEI embedding service** (Phase 1) — Medium risk; requires Docker Compose change, model download, async HTTP client rewrite.
+4. **force-graph** (Phase 2, UX-02) — Medium risk; new frontend component, but isolated from backend.
+5. **Dynamic memory types** (Phase 6, ARCH-04) — Medium risk; requires DB migration, prompt engineering changes, UI updates.
+6. **No reranker or RRF** — Single-stage dense search is sufficient for VM2's use case.
 
 ---
 

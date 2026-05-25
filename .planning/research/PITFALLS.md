@@ -28,12 +28,12 @@
 
 ## Moderate Pitfalls
 
-### Pitfall 4: Cytoscape.js SSR Crash in Next.js
+### Pitfall 4: force-graph SSR in Next.js
 **What goes wrong:** `window is not defined` during server-side rendering.
-**Why it happens:** Cytoscape.js accesses browser APIs on import.
+**Why it happens:** force-graph accesses browser Canvas APIs on import.
 **Prevention:** Use dynamic import with `ssr: false`:
 ```typescript
-const CytoscapeComponent = dynamic(() => import('react-cytoscapejs'), { ssr: false });
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 ```
 
 ### Pitfall 5: JSONB Query Performance Without Indexes
@@ -51,10 +51,10 @@ CREATE INDEX idx_memories_metadata ON memories USING gin(metadata);
 
 ## Minor Pitfalls
 
-### Pitfall 7: RRF Constant Tuning Obsession
-**What goes wrong:** Spending days tuning `k=60` for RRF.
-**Why it happens:** Believing RRF needs dataset-specific optimization.
-**Prevention:** Use `k=60` as a robust default; only tune if you have an evaluation dataset.
+### Pitfall 7: Building Custom LiteLLM Adapters
+**What goes wrong:** Writing wrapper classes around `litellm.acompletion()`.
+**Why it happens:** Thinking a custom abstraction is needed.
+**Prevention:** Use `litellm.acompletion()` directly. Pass provider config from DB straight into the function call.
 
 ### Pitfall 8: Forgetting Embedding Dimension Migration
 **What goes wrong:** Existing memories have 384-dim vectors; new model outputs 1024-dim.
@@ -67,7 +67,8 @@ CREATE INDEX idx_memories_metadata ON memories USING gin(metadata);
 |-------------|---------------|------------|
 | LiteLLM integration | Global `litellm.api_key` leak between requests | Pass per-request `api_key` |
 | TEI deployment | Model download timeout on first start | Pre-download model in Dockerfile or volume mount |
-| Cytoscape.js graph | Layout algorithm freezes with 500+ nodes | Use `fcose` (WebWorker-friendly) and debounce layout calls |
+| force-graph graph | Canvas renderer performance with 10K+ nodes | Use `nodeRelSize` and `linkOpacity` to reduce draw calls; consider LOD |
+| Health checks | Background pinging wastes resources | Handle errors at failure point with fallback instead |
 | Dynamic types | Users creating types with conflicting schemas | Validate schema at creation time, enforce required fields |
 | HNSW indexing | Index build locks table | Use `CREATE INDEX CONCURRENTLY` |
 

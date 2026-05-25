@@ -9,33 +9,22 @@
 
 | Component | Responsibility | Communicates With |
 |-----------|---------------|-------------------|
-| TEI Service | Embedding + reranking inference | FastAPI (HTTP), PostgreSQL (none — stateless) |
+| TEI Service | Embedding inference | FastAPI (HTTP), PostgreSQL (none — stateless) |
 | LiteLLM Gateway | Provider-agnostic LLM calls | Extraction agent, provider test endpoint, MCP |
-| Cytoscape Graph | Frontend knowledge graph visualization | `/api/graph`, `/api/memories` |
+| force-graph | Frontend knowledge graph visualization | `/api/graph`, `/api/memories` |
 | Memory Type Registry | Project-scoped type definitions | Extraction validator, memory CRUD |
-| RRF Search Service | Hybrid dense/sparse retrieval | Context builder, memory list API |
-| Reranker Client | Second-stage result ranking | RRF Search Service |
+| HNSW Search | Single-stage dense vector retrieval | Context builder, memory list API |
 
-### Data Flow: Advanced Context Retrieval
+### Data Flow: Simple Context Retrieval
 
 ```
 Conversation Query
     |
     v
-[Query Expansion] (optional LLM call)
+[Embedding Client] --> TEI /embed --> Dense vector (1024-dim)
     |
     v
-[Embedding Client] --> TEI /embed --> Dense vector
-    |                              --> Sparse vector (if BGE-M3)
-    v
-[pgvector HNSW] --> Top 100 candidates (semantic)
-[pgvector sparsevec OR tsvector] --> Top 100 candidates (lexical)
-    |
-    v
-[RRF Fusion] (SQL-level) --> Combined top 50
-    |
-    v
-[Reranker Client] --> TEI /rerank --> Scored top 20
+[pgvector HNSW] --> Top 20-50 candidates (cosine similarity)
     |
     v
 [Context Builder] --> Formatted memory block --> LLM system prompt
@@ -56,10 +45,16 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:1.7.2
 ```
 
-### Pattern 2: Database-Level Fusion
-**What:** Perform RRF or score combination in SQL rather than Python.
-**When:** Combining ranked lists from multiple retrieval methods.
-**Example:** See `STACK.md` section 4.3 for the RRF SQL function and hybrid query.
+### Pattern 2: Error-at-Failure Fallback
+**What:** Handle provider errors at the point of failure, not via background health checks.
+**When:** Async batch-driven system where real-time health monitoring is unnecessary.
+**Example:**
+```python
+try:
+    response = await litellm.acompletion(**primary_config)
+except (ProviderError, TimeoutError):
+    response = await litellm.acompletion(**fallback_config)
+```
 
 ### Pattern 3: JSONB Registry with JSON Schema Validation
 **What:** Store per-project type schemas as JSONB, validate memory metadata at extraction time.
@@ -83,17 +78,17 @@ validate(instance=memory_metadata, schema=memory_type.schema)
 **Why bad:** Complex queries, poor performance, no type safety, hard to index.
 **Instead:** PostgreSQL JSONB column with GIN indexes on known keys.
 
-### Anti-Pattern 3: Weighted-Sum Score Fusion
-**What:** `score = 0.7 * semantic + 0.3 * bm25` in Python.
-**Why bad:** Requires per-dataset tuning; scores are incomparable across methods.
-**Instead:** Reciprocal Rank Fusion (RRF) in SQL — robust and parameter-light.
+### Anti-Pattern 3: Multi-Stage RAG Pipeline
+**What:** Dense + sparse + RRF + reranker for retrieval.
+**Why bad:** Overkill for VM2's use case. The 5000-token context window provides rich context regardless of retrieval perfection. Adds unnecessary latency.
+**Instead:** Single-stage pgvector HNSW with cosine similarity — simple and fast.
 
 ## Scalability Considerations
 
 | Concern | At 1K memories | At 100K memories | At 1M memories |
 |---------|--------------|------------------|----------------|
 | Vector search | Exact search fine | HNSW index required | HNSW + `halfvec` or binary quantization |
-| Graph viz | Cytoscape.js smooth | Cytoscape.js fine | May need level-of-detail (LOD) or clustering |
+| Graph viz | force-graph smooth | force-graph fine | Canvas renderer handles 10K+ nodes |
 | Embedding storage | ~4MB (1024-dim float32) | ~400MB | ~4GB — use `halfvec` to halve |
 | TEI throughput | CPU sufficient | GPU recommended | GPU + batching required |
 
