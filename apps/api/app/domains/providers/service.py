@@ -118,6 +118,7 @@ async def update_agent_settings(
     if agent is None:
         return None
 
+    agent.primary_provider_id = data.primary_provider_id
     agent.fallback_provider_ids = list(data.fallback_provider_ids)
     agent.settings_override = dict(data.settings_override)
     await db.flush()
@@ -138,20 +139,29 @@ async def resolve_provider_chain(
     if agent is None:
         return []
 
-    if not agent.fallback_provider_ids:
+    # Build ordered list: primary first, then fallbacks (deduplicated).
+    provider_ids: list[str] = []
+    if agent.primary_provider_id:
+        provider_ids.append(agent.primary_provider_id)
+    if agent.fallback_provider_ids:
+        provider_ids.extend(
+            [pid for pid in agent.fallback_provider_ids if pid != agent.primary_provider_id]
+        )
+
+    if not provider_ids:
         return []
 
-    # Fetch providers in the order defined by the agent's fallback list.
+    # Fetch providers in the order defined above.
     result = await db.execute(
         select(Provider).where(
-            Provider.id.in_(agent.fallback_provider_ids),
+            Provider.id.in_(provider_ids),
             Provider.is_enabled.is_(True),
         )
     )
     providers: dict[str, Provider] = {p.id: p for p in result.scalars().all()}
 
-    # Preserve the order defined by fallback_provider_ids.
-    return [providers[pid] for pid in agent.fallback_provider_ids if pid in providers]
+    # Preserve the order.
+    return [providers[pid] for pid in provider_ids if pid in providers]
 
 
 # ---------------------------------------------------------------------------
