@@ -319,20 +319,21 @@ class TimelineEntry(Base):
 
 
 # ---------------------------------------------------------------------------
-# Provider Configs (LLM providers)
+# Providers (LLM providers)
 # ---------------------------------------------------------------------------
 
 
-class ProviderConfig(Base):
-    __tablename__ = "provider_configs"
+class Provider(Base):
+    __tablename__ = "providers"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    role: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     provider_type: Mapped[str] = mapped_column(Text, nullable=False)
     base_url: Mapped[str] = mapped_column(Text, nullable=False)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, default="")
     model: Mapped[str] = mapped_column(Text, nullable=False)
-    api_key: Mapped[str] = mapped_column(Text, default="")
     max_tokens: Mapped[int] = mapped_column(Integer, default=2000)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -343,6 +344,62 @@ class ProviderConfig(Base):
     @staticmethod
     def new_id() -> str:
         return _generate_id("prov")
+
+    __table_args__ = (Index("idx_providers_type", "provider_type"),)
+
+
+# ---------------------------------------------------------------------------
+# Agents ( LLM agent roles )
+# ---------------------------------------------------------------------------
+
+
+class Agent(Base):
+    __tablename__ = "agents"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    fallback_provider_ids: Mapped[list[str]] = mapped_column(
+        JSONB, server_default="[]", default=list
+    )
+    settings_override: Mapped[dict] = mapped_column(
+        JSONB, server_default="{}", default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    @staticmethod
+    def new_id() -> str:
+        return _generate_id("agent")
+
+
+# ---------------------------------------------------------------------------
+# Usage Logs ( LLM usage tracking )
+# ---------------------------------------------------------------------------
+
+
+class UsageLog(Base):
+    __tablename__ = "usage_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("providers.id"), nullable=False
+    )
+    agent_role: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    fallback_position: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 # ---------------------------------------------------------------------------
