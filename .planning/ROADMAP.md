@@ -19,7 +19,7 @@
 
 **Plans:** 1 planPlans:
 
-- [ ] 01-01-PLAN.md — Add api healthcheck, verify stack health, identify Brave MCnulty
+- [x] 01-01-PLAN.md — Add api healthcheck, verify stack health, identify Brave MCnulty
 
 ### Phase 2: Provider Test Fix & Pipeline Check
 
