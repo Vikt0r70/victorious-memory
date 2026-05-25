@@ -209,7 +209,7 @@ async def seed_default_agents(db: AsyncSession) -> None:
         logger.debug("Agents table already seeded — skipping")
         return
 
-    default_roles = ["planner", "researcher", "executor"]
+    default_roles = ["extraction", "edge_detection", "consolidation"]
     for role in default_roles:
         agent = Agent(
             id=Agent.new_id(),
