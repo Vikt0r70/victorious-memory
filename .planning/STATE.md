@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: Phase 1 complete
-last_updated: "2026-05-26T23:30:00.000Z"
-last_activity: 2026-05-26 — Phase 1 execution complete, all 14 tasks done, 30 tests passing
+last_updated: "2026-05-26T23:17:00.000Z"
+last_activity: 2026-05-26 — Phase 1 gap closure complete, all plans executed, all verification gaps closed
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 3
+  completed_plans: 3
   percent: 17
 ---
 
@@ -26,14 +26,19 @@ See: `.planning/PROJECT.md` (updated 2026-05-25)
 
 ## Current Position
 
-Phase: 2 — Dashboard Redesign
-Plan: Pending
-Status: Ready for planning
-Last activity: 2026-05-26 — Phase 1 complete with all 10 success criteria passed
+Phase: 1 complete — all gap closure plans executed
+Plan: 03 (completed)
+Status: Ready for Phase 2 planning
+Last activity: 2026-05-26 — Plan 03 executed: frontend provider types, is_enabled, model dropdown, 4-fallback cap, tokens_used fix
 
 ## Active Work
 
-Phase 1 complete. All 14 tasks executed across 5 waves:
+Phase 1 complete with all verification gaps closed. Both gap-closure plans executed:
+- **Plan 02 (Backend) ✅:** Fixed `seed_default_agents()` roles + `primary_provider_id` persistence
+- **Plan 03 (Frontend) ✅:** Aligned provider types/templates, added model dropdown, fixed `enabled`→`is_enabled`, increased fallback cap to 4, fixed `tokens_used` bug
+
+Phase 1 original work: All 14 tasks executed across 5 waves:
+
 - Wave 1: Dependencies + Alembic migration
 - Wave 2: Encryption, Models, Templates, Schemas, Service, Gateway
 - Wave 3: Router, Main.py, Worker.py integration
@@ -42,6 +47,9 @@ Phase 1 complete. All 14 tasks executed across 5 waves:
 
 ## Recent Activity
 
+- 2026-05-26: Plan 03 (Frontend Gap Closure) complete — 5 commits: templates, is_enabled, model dropdown, fallback cap, tokens_used fix
+- 2026-05-26: Plan 02 (Backend Gap Closure) complete — 5 commits: seed roles, primary_provider_id, encryption perms, litellm module-level, API key scrub
+- 2026-05-26: Phase 1 gap-closure planning complete — 2 gap plans created (Plan 02: backend fixes, Plan 03: frontend fixes) addressing 5 verification gaps (PROV-03, PROV-04, PROV-05, PROV-07, PROV-08)
 - 2026-05-26: Phase 1 execution complete — 30 tests passing, all 10 success criteria met
 - 2026-05-26: Task 14 (E2E Verification) complete with SUMMARY.md
 - 2026-05-26: Task 13 (Tests) complete — 30 unit tests added
@@ -61,6 +69,8 @@ Phase 1 complete. All 14 tasks executed across 5 waves:
 
 ## Decisions Made
 
+- Frontend provider types/templates exact mirror of backend ProviderType Literal and PROVIDER_TEMPLATES
+- OpenCode template uses provider_type "openai" for LiteLLM compatibility
 - LiteLLM adopted as provider abstraction layer
 - Two-table design: providers registry + agents with JSONB override
 - Fernet encryption for API keys at rest
