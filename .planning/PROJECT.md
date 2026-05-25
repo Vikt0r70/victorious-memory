@@ -66,6 +66,21 @@ Automatically extract and surface relevant knowledge from developer conversation
 
 **Current state:** The architecture is solid but the web dashboard UX needs a complete overhaul — graph visualization is inadequate, interactive elements are broken, and the provider configuration model forces per-agent setup instead of a shared registry. The extraction pipeline and memory lifecycle have never been verified end-to-end. Provider architecture needs LiteLLM integration for proper multi-provider support.
 
+**Performance targets:**
+- Scale: Tens of thousands of memories
+- Search latency: <1s acceptable for context retrieval
+- Graph rendering: Canvas-based (not DOM/SVG) for performance at scale
+
+**User preferences:**
+- Primary LLM provider: OpenCode Go (built-in)
+- Memory lifecycle: Automatic daily background task, no notifications
+- Conflict detection: Dashboard badge only (no alerts)
+- Export: JSON format
+- Plugin package: `victorious-memory` on npm
+- MCP: npx distribution
+- Testing: GitHub Actions on every commit
+- Data migration: Start fresh (existing data is test data)
+
 **Known technical concerns:**
 - Provider gateway uses module-level singleton; provider test returns OK 200 with no API key
 - In-process sentence-transformers blocks the event loop
@@ -91,6 +106,16 @@ Automatically extract and surface relevant knowledge from developer conversation
 | Dynamic model lists via provider API calls | Eliminates manual model name entry, stays current | — Pending (satisfied by LiteLLM) |
 | Full dashboard redesign | Current UI has accumulated too many issues — better to rebuild than patch | — Pending |
 | Data import excluded | Too complex for this milestone — focus on export first | — Pending |
+| Scale target: tens of thousands of memories | User confirmed expected scale | — Pending |
+| Search latency budget: <1s | User confirmed acceptable latency | — Pending |
+| Primary LLM provider: OpenCode Go | User uses OpenCode's built-in provider | — Pending |
+| Memory lifecycle: daily automatic task | User wants automatic cleanup without manual triggers | — Pending |
+| Conflict detection: dashboard badge only | User doesn't want notifications, just UI indicator | — Pending |
+| Export format: JSON only | User preference for data export | — Pending |
+| Plugin npm package: `victorious-memory` | User-approved package name | — Pending |
+| MCP distribution: npx | Recommended by user | — Pending |
+| CI/CD: GitHub Actions on every commit | User preference for automated testing | — Pending |
+| Embedding migration: start fresh | All existing data is test data | — Pending |
 
 ## Evolution
 
