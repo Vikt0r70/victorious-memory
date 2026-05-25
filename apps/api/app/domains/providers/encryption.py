@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -20,6 +21,7 @@ class KeyEncryption:
             else:
                 self._key = Fernet.generate_key()
                 key_path.write_bytes(self._key)
+                os.chmod(key_path, 0o600)
         self._fernet = Fernet(self._key)
 
     def encrypt(self, plaintext: str) -> str:
