@@ -188,6 +188,7 @@ ALTER TABLE memories ADD COLUMN metadata JSONB DEFAULT '{}';
 
 **Recommended for VM2:**
 - **Embedding:** `BGE-M3` via TEI. 1024 dimensions, dense vectors only. Simple and effective.
+- **CPU fallback:** For desktop without GPU, `BAAI/bge-base-en-v1.5` (110M params, 768-dim) is lighter and faster. Use BGE-M3 only for GPU setups.
 - **No reranker:** Single-stage retrieval is sufficient. The 5000-token context window provides rich context regardless.
 - **No sparse vectors:** Dense HNSW search is enough. BM25 can be removed.
 
@@ -366,7 +367,7 @@ docker run --gpus all -p 8080:80 -v hf_cache:/data \
 ## Sources
 
 - [LiteLLM Docs](https://docs.litellm.ai/docs/) — Official documentation (HIGH confidence)
-- [Cytoscape.js Official](https://js.cytoscape.org/) — v3.33.x API, extensions list (HIGH confidence)
+- [force-graph GitHub](https://github.com/vasturiano/react-force-graph) — React wrapper for force-directed graphs (HIGH confidence)
 - [React Flow Official](https://reactflow.dev/) — v12.x docs, comparison context (HIGH confidence)
 - [pgvector GitHub](https://github.com/pgvector/pgvector) — v0.8.2 README, HNSW/IVFFlat docs (HIGH confidence)
 - [Qwen3-Embedding-8B HuggingFace](https://huggingface.co/Qwen/Qwen3-Embedding-8B) — Model card, benchmarks, TEI usage (HIGH confidence)

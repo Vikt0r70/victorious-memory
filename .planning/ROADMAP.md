@@ -110,7 +110,7 @@
 | 5: Documentation & Export | SYS-06, SYS-07 | 2 |
 | 6: Architecture Excellence | ARCH-01→04 | 4 |
 
-**Total:** 6 phases, 26 requirements, 100% coverage ✓
+**Total:** 6 phases, 27 requirements, 100% coverage ✓
 
 ## Architecture Change Log
 

@@ -76,6 +76,6 @@ CREATE INDEX idx_memories_metadata ON memories USING gin(metadata);
 
 - pgvector v0.8.2 README — troubleshooting section (HIGH confidence)
 - LiteLLM docs — exception mapping and model name format (HIGH confidence)
-- Cytoscape.js GitHub issues — SSR and React integration patterns (MEDIUM confidence)
+- force-graph GitHub issues — React SSR and Canvas integration patterns (MEDIUM confidence)
 - TEI GitHub issues — CPU/GPU image confusion (MEDIUM confidence)
 - `litellm-integration-RESEARCH.md` — pitfalls section (HIGH confidence)

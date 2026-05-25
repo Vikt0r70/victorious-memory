@@ -51,8 +51,6 @@
 
 | Feature | Reason |
 |---------|--------|
-| Dashboard full redesign | This IS in scope for v1.1 |
-| Graph visualization rewrite | This IS in scope for v1.1 |
 | Raw extraction UI redesign | Keep as-is, functional enough |
 | Authentication/authorization | Localhost-only, not needed |
 | Mobile responsive layout | Desktop-first, web dashboard only |
@@ -87,10 +85,10 @@
 | SYS-05 | Phase 4 | Pending |
 | SYS-06 | Phase 5 | Pending |
 | SYS-07 | Phase 5 | Pending |
-| ARCH-01 | Phase 6 | Pending |
-| ARCH-02 | Phase 6 | Pending |
-| ARCH-03 | Phase 6 | Pending |
-| ARCH-04 | Phase 6 | Pending |
+| ARCH-01 | Phase 1 | Pending |
+| ARCH-02 | Phase 2 | Pending |
+| ARCH-03 | Phase 1 | Pending |
+| ARCH-04 | Phase 3 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 27 total
