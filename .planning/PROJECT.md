@@ -31,6 +31,7 @@ Automatically extract and surface relevant knowledge from developer conversation
 - [ ] **PROV-03**: Provider test validation — test endpoint returns actual error when API key is missing/invalid
 - [ ] **PROV-04**: Auto-detect provider type schema — build correct JSON payload per provider (OpenAI, Anthropic, OpenRouter, custom)
 - [ ] **PROV-05**: Lock roles per agent — extraction/edge-detection/consolidation roles should be fixed per agent, not editable
+- [ ] **PROV-ARCH**: Adopt LiteLLM as provider abstraction layer — handles schema translation, model discovery, multi-provider support
 - [ ] **UX-01**: Fix hover cursor indicators on all clickable elements (allowed types, review queue buttons, settings)
 - [ ] **UX-02**: Fix memory repository table layout shift when filters/content types are selected
 - [ ] **UX-03**: Review queue buttons (Approve High, Reject) should display as proper buttons with cursor pointer
@@ -77,8 +78,9 @@ Automatically extract and surface relevant knowledge from developer conversation
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Unified provider registry over per-agent configs | Reduces setup friction, better UX | — Pending |
-| Dynamic model lists via provider API calls | Eliminates manual model name entry, stays current | — Pending |
+| Adopt LiteLLM as provider abstraction layer | 100+ providers instantly, schema handling, model discovery — eliminates custom provider engineering | — In Progress (Phase 2/5) |
+| Unified provider registry over per-agent configs | Reduces setup friction, better UX | — Pending (Phase 5) |
+| Dynamic model lists via provider API calls | Eliminates manual model name entry, stays current | — Pending (satisfied by LiteLLM) |
 | Keep current dashboard layout | Focus on fixing what's broken, not redesign | — Pending |
 | Fix UX issues before adding features | Broken UX erodes trust in the system | — Pending |
 

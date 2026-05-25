@@ -59,47 +59,23 @@
 4. Relevant section includes hybrid search results
 5. Plugin injects the block into system prompt before messages
 
-### Phase 5: Unified Provider Registry
+### Phase 5: LiteLLM Integration & Provider Configuration UI
 
-**Goal:** Replace per-agent provider configs with a shared provider registry — configure once, select per agent.
+**Goal:** Integrate LiteLLM as the provider abstraction layer and build a lightweight configuration UI on top of it.
 **Mode:** mvp
 **Requirements:** PROV-01, PROV-02, PROV-05, PROV-07, PROV-08
 **Success Criteria**:
 
-1. New "Providers" tab in settings with CRUD for provider configs
-2. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Custom
-3. Agent settings show provider dropdown instead of inline config fields
-4. Extraction, edge-detection, consolidation roles are fixed (read-only)
-5. Adding a custom provider saves base URL, name, API key
-6. Deleting a provider warns if it's in use by an agent
+1. LiteLLM installed as pip dependency (`litellm` in `pyproject.toml`)
+2. `ProviderGateway` rewritten as thin wrapper around `litellm.acompletion()`
+3. New "Providers" tab in settings with CRUD for provider configs
+4. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Custom
+5. Agent settings show provider dropdown — roles fixed (read-only)
+6. LiteLLM handles all provider schemas internally (OpenAI, Anthropic, custom)
+7. Dynamic model lists via LiteLLM's model discovery (PROV-03 satisfied by LiteLLM)
+8. Provider schema auto-detection via LiteLLM (PROV-04 satisfied by LiteLLM)
 
-### Phase 6: Dynamic Model Lists
-
-**Goal:** Fetch available models from provider APIs instead of requiring manual model name entry.
-**Mode:** mvp
-**Requirements:** PROV-03
-**Success Criteria**:
-
-1. Model field is a dropdown populated by GET {base_url}/v1/models (OpenAI-compatible) or equivalent
-2. Dropdown updates when provider is changed
-3. Loading state shown while models are being fetched
-4. Graceful fallback to text input if model fetch fails (with error message)
-5. Cache model list for 5 minutes to avoid excessive API calls
-
-### Phase 7: Provider Schema Auto-Detection
-
-**Goal:** Build correct API request payloads per provider type automatically.
-**Mode:** mvp
-**Requirements:** PROV-04
-**Success Criteria**:
-
-1. OpenAI-compatible providers: POST /chat/completions with standard schema
-2. Anthropic providers: POST /v1/messages with Anthropic schema
-3. Provider type selection updates the backend gateway routing
-4. Test endpoint uses the correct schema for the selected provider type
-5. Custom providers with "anthropic-compatible" type use Anthropic schema
-
-### Phase 8: UX Fixes Round 1 — Interactive Elements
+### Phase 6: UX Fixes Round 1 — Interactive Elements
 
 **Goal:** Fix cursor indicators, button styling, and clickable element feedback.
 **Mode:** mvp
@@ -112,7 +88,7 @@
 4. Empty review queue shows "No memories pending review" with disabled buttons visible
 5. Allowed types chips in auto-approve section show selection state clearly
 
-### Phase 9: UX Fixes Round 2 — Layout Stability
+### Phase 7: UX Fixes Round 2 — Layout Stability
 
 **Goal:** Fix table layout shift in memory repository and auto-approve section behavior.
 **Mode:** mvp
@@ -125,7 +101,7 @@
 4. Auto-approve allowed types click toggles selection with clear visual feedback
 5. No jarring layout jumps in any settings section
 
-### Phase 10: Memory Lifecycle Verification
+### Phase 8: Memory Lifecycle Verification
 
 **Goal:** Verify decay, consolidation, and conflict detection processes actually execute and produce results.
 **Mode:** mvp
@@ -138,7 +114,7 @@
 4. Activity log records lifecycle events
 5. Lifecycle endpoints return correct status and results
 
-### Phase 11: Plugin & MCP Integration Verification
+### Phase 9: Plugin & MCP Integration Verification
 
 **Goal:** Verify the plugin and MCP server are fully functional with real data flow.
 **Mode:** mvp
@@ -152,7 +128,7 @@
 5. MCP list_memories and get_activity return accurate data
 6. Plugin flush behavior responds to dashboard config changes
 
-### Phase 12: Cleanup & Final Verification
+### Phase 10: Cleanup & Final Verification
 
 **Goal:** Resolve any remaining issues, clean up temp files, verify the full system.
 **Mode:** mvp
@@ -176,16 +152,20 @@
 | 2: Provider Test | PROV-06, SYS-02, PLG-01 | 3 |
 | 3: Extraction E2E | SYS-03 | 1 |
 | 4: Context Retrieval | SYS-04, PLG-02 | 2 |
-| 5: Provider Registry | PROV-01, PROV-02, PROV-05, PROV-07, PROV-08 | 5 |
-| 6: Dynamic Models | PROV-03 | 1 |
-| 7: Provider Schemas | PROV-04 | 1 |
-| 8: UX Round 1 | UX-01, UX-02, UX-05 | 3 |
-| 9: UX Round 2 | UX-03, UX-04 | 2 |
-| 10: Memory Lifecycle | SYS-05 | 1 |
-| 11: Plugin & MCP | SYS-06, PLG-03, PLG-04 | 3 |
-| 12: Cleanup | Integration | — |
+| 5: LiteLLM Integration | PROV-01, PROV-02, PROV-03, PROV-04, PROV-05, PROV-07, PROV-08 | 7 |
+| 6: UX Round 1 | UX-01, UX-02, UX-05 | 3 |
+| 7: UX Round 2 | UX-03, UX-04 | 2 |
+| 8: Memory Lifecycle | SYS-05 | 1 |
+| 9: Plugin & MCP | SYS-06, PLG-03, PLG-04 | 3 |
+| 10: Cleanup | Integration | — |
 
-**Total:** 12 phases, 24 requirements, 100% coverage ✓
+**Total:** 10 phases, 24 requirements, 100% coverage ✓
+
+## Architecture Change Log
+
+| Date | Change | Impact |
+|------|--------|--------|
+| 2026-05-25 | Adopted LiteLLM as provider abstraction layer | Phases 5-7 merged into single "LiteLLM Integration" phase (PROV-03, PROV-04 now satisfied by LiteLLM) |
 
 ---
 *Roadmap created: 2026-05-25*
