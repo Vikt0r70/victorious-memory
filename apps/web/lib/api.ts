@@ -117,12 +117,30 @@ export const settingsApi = {
 // ─── Providers ────────────────────────────────────────
 export const providersApi = {
   list: () => request<any>("/providers"),
-  upsert: (data: any) =>
+  create: (data: any) =>
     request<any>("/providers", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: any) =>
+    request<any>(`/providers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<void>(`/providers/${id}`, { method: "DELETE" }),
+  test: (id: string) =>
+    request<any>(`/providers/${id}/test`, { method: "POST" }),
+  listModels: (id: string) => request<any>(`/providers/${id}/models`),
+};
+
+// ─── Agents ───────────────────────────────────────────
+export const agentsApi = {
+  list: () => request<any>("/agents"),
+  update: (role: string, data: any) =>
+    request<any>(`/agents/${role}`, { method: "PUT", body: JSON.stringify(data) }),
   test: (role: string) =>
-    request<any>(`/providers/${role}/test`, { method: "POST" }),
+    request<any>(`/agents/${role}/test`, { method: "POST" }),
+};
+
+// ─── Usage ────────────────────────────────────────────
+export const usageApi = {
+  list: (params?: Record<string, string>) =>
+    request<any>(`/usage?${new URLSearchParams(params)}`),
 };
 
 // ─── System ───────────────────────────────────────────

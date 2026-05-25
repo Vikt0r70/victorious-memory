@@ -68,7 +68,7 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
         max_tokens: maxTokens,
       };
       if (apiKey.trim()) payload.api_key = apiKey.trim();
-      await providersApi.upsert(payload);
+      await providersApi.create(payload);
       onSaved?.();
       onClose();
     } catch (e: any) {
