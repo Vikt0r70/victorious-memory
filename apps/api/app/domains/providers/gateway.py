@@ -43,13 +43,15 @@ __all__ = [
 # Keep old exception name as an alias for backward compatibility.
 ProviderNotConfiguredError = ProviderError
 
+# Ensure LiteLLM does not retry internally — we handle fallback chains ourselves.
+litellm.num_retries = 0
+
 
 class ProviderGateway:
     """Unified gateway for sending LLM completions through LiteLLM with fallback chains."""
 
     def __init__(self) -> None:
-        # Ensure LiteLLM does not retry internally — we handle fallback chains ourselves.
-        litellm.num_retries = 0
+        pass
 
     # ------------------------------------------------------------------
     # Chain resolution
