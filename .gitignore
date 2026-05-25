@@ -9,3 +9,5 @@ dist/
 pgdata/
 .pytest_cache/
 *.db
+.agent/
+.opencode/
