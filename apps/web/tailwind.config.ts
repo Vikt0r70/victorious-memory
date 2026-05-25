@@ -1,0 +1,126 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  darkMode: "class",
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // ─── Material Design 3 Dark Palette (from Stitch) ───
+        "on-tertiary-fixed": "#301400",
+        "inverse-surface": "#e4e1ed",
+        "secondary-fixed": "#d8e3fb",
+        "on-surface": "#e4e1ed",
+        secondary: "#bcc7de",
+        "on-tertiary": "#4f2500",
+        "primary-container": "#8083ff",
+        "on-secondary-fixed-variant": "#3c475a",
+        "on-secondary-container": "#aeb9d0",
+        "tertiary-fixed": "#ffdcc5",
+        "surface-container": "#1f1f27",
+        surface: "#13131b",
+        "surface-container-high": "#292932",
+        "tertiary-container": "#d97721",
+        "inverse-primary": "#494bd6",
+        primary: "#c0c1ff",
+        "on-tertiary-container": "#452000",
+        "surface-tint": "#c0c1ff",
+        "primary-fixed": "#e1e0ff",
+        "inverse-on-surface": "#303038",
+        "on-secondary": "#263143",
+        "primary-fixed-dim": "#c0c1ff",
+        outline: "#908fa0",
+        "outline-variant": "#464554",
+        "on-tertiary-fixed-variant": "#703700",
+        "surface-bright": "#393841",
+        "on-error": "#690005",
+        "surface-container-lowest": "#0d0d15",
+        "tertiary-fixed-dim": "#ffb783",
+        "on-primary-fixed": "#07006c",
+        "on-background": "#e4e1ed",
+        "surface-container-highest": "#34343d",
+        "on-primary": "#1000a9",
+        "surface-container-low": "#1b1b23",
+        tertiary: "#ffb783",
+        "on-secondary-fixed": "#111c2d",
+        "secondary-container": "#3e495d",
+        error: "#ffb4ab",
+        "on-surface-variant": "#c7c4d7",
+        "secondary-fixed-dim": "#bcc7de",
+        "on-primary-container": "#0d0096",
+        "surface-dim": "#13131b",
+        "on-primary-fixed-variant": "#2f2ebe",
+        "on-error-container": "#ffdad6",
+        background: "#13131b",
+        "surface-variant": "#34343d",
+        "error-container": "#93000a",
+        // ─── Extra semantic colors ───
+        success: "#4ade80",
+        "success-dim": "#22c55e",
+        info: "#3b82f6",
+        warning: "#f97316",
+        // ─── Card backgrounds ───
+        card: "#1e293b",
+        "card-border": "rgba(51, 65, 85, 0.5)",
+      },
+      borderRadius: {
+        DEFAULT: "0.125rem",
+        lg: "0.25rem",
+        xl: "0.5rem",
+        full: "0.75rem",
+      },
+      spacing: {
+        "margin-mobile": "16px",
+        "sidebar-width": "260px",
+        gutter: "16px",
+        base: "4px",
+        "margin-desktop": "24px",
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+      },
+      fontSize: {
+        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+        "body-sm": ["13px", { lineHeight: "18px", fontWeight: "400" }],
+        "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        "headline-lg": [
+          "30px",
+          { lineHeight: "38px", letterSpacing: "-0.02em", fontWeight: "600" },
+        ],
+        "headline-md": [
+          "24px",
+          { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" },
+        ],
+        "code-md": ["13px", { lineHeight: "20px", fontWeight: "400" }],
+        "label-caps": [
+          "11px",
+          { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "700" },
+        ],
+        "headline-sm": ["18px", { lineHeight: "26px", fontWeight: "600" }],
+      },
+      keyframes: {
+        fadeInUp: {
+          from: { opacity: "0", transform: "translateY(20px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        pulse: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
+      },
+      animation: {
+        "fade-in-up": "fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        shimmer: "shimmer 2.5s infinite",
+      },
+    },
+  },
+  plugins: [],
+};
+export default config;

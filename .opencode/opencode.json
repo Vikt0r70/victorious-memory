@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "read": {
+      "D:/Projects/Victorious Memory 2V/.opencode/get-shit-done/*": "allow"
+    },
+    "external_directory": {
+      "D:/Projects/Victorious Memory 2V/.opencode/get-shit-done/*": "allow"
+    }
+  }
+}
