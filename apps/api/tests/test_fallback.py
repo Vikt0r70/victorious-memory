@@ -10,7 +10,7 @@ from litellm.types.utils import Choices, ModelResponse, Usage
 
 from app.domains.providers.exceptions import ProviderAuthenticationError, ProviderError
 from app.domains.providers.gateway import ProviderGateway
-from app.models import Provider
+from app.models import Agent, Provider
 
 
 def _make_provider(provider_id: str, name: str, provider_type: str = "openai", model: str = "gpt-4o") -> Provider:
@@ -152,3 +152,30 @@ class TestFallbackChain:
                             await gateway._complete_model("planner", messages=[{"role": "user", "content": "hi"}])
 
         assert mock_acomp.await_count == 2
+
+
+class TestPrimaryProviderChain:
+    """Tests that resolve_provider_chain respects primary_provider_id."""
+
+    @pytest.mark.asyncio
+    async def test_primary_prepended_to_fallback_chain(self):
+        """When an agent has primary_provider_id, resolve chain puts it first."""
+        gateway = ProviderGateway()
+        primary = _make_provider("p_primary", "Primary")
+        fallback = _make_provider("p_fb1", "Fallback1")
+
+        with patch.object(gateway, "_resolve_chain", new_callable=AsyncMock, return_value=[primary, fallback]):
+            with patch("app.domains.providers.gateway.litellm.acompletion", new_callable=AsyncMock) as mock_acomp:
+                mock_acomp.side_effect = [
+                    RateLimitError("RL1", llm_provider="openai", model="gpt-4o"),
+                    _fake_response("fallback-ok"),
+                ]
+                with patch("app.domains.providers.gateway.async_session", return_value=_mock_async_session()):
+                    with patch("app.domains.providers.gateway.decrypt_api_key", return_value="plain-key"):
+                        with patch("app.domains.providers.gateway.create_usage_log", new_callable=AsyncMock):
+                            response = await gateway._complete_model(
+                                "extraction", messages=[{"role": "user", "content": "hi"}]
+                            )
+
+        assert mock_acomp.await_count == 2
+        assert response.choices[0].message.content == "fallback-ok"

@@ -12,6 +12,7 @@ from app.domains.providers.service import (
     create_provider,
     delete_provider,
     resolve_provider_chain,
+    seed_default_agents,
     update_agent_settings,
     update_provider,
 )
@@ -211,3 +212,144 @@ class TestDeleteProvider:
         assert result is True
         mock_db.delete.assert_called_once()
         mock_db.flush.assert_awaited_once()
+
+
+class TestUpdateAgentSettingsPrimaryProvider:
+    """Tests for update_agent_settings with primary_provider_id."""
+
+    @pytest.mark.asyncio
+    async def test_persists_primary_provider_id(self, mock_db):
+        """update_agent_settings should persist primary_provider_id on the agent."""
+        agent = Agent(id="a1", role="extraction", fallback_provider_ids=[], primary_provider_id=None)
+        mock_db.execute = AsyncMock(return_value=_scalar_one_or_none(agent))
+
+        data = AgentSettings(
+            role="extraction",
+            primary_provider_id="prov_abc123",
+            fallback_provider_ids=["prov_x", "prov_y"],
+        )
+        updated = await update_agent_settings(mock_db, "extraction", data)
+        assert updated.primary_provider_id == "prov_abc123"
+        assert updated.fallback_provider_ids == ["prov_x", "prov_y"]
+
+    @pytest.mark.asyncio
+    async def test_clears_primary_provider_id_when_none(self, mock_db):
+        """Setting primary_provider_id=None should clear it."""
+        agent = Agent(id="a1", role="extraction", fallback_provider_ids=[], primary_provider_id="prov_old")
+        mock_db.execute = AsyncMock(return_value=_scalar_one_or_none(agent))
+
+        data = AgentSettings(
+            role="extraction",
+            primary_provider_id=None,
+            fallback_provider_ids=[],
+        )
+        updated = await update_agent_settings(mock_db, "extraction", data)
+        assert updated.primary_provider_id is None
+
+
+class TestSeedDefaultAgents:
+    """Tests for seed_default_agents."""
+
+    @pytest.mark.asyncio
+    async def test_seeds_three_correct_roles(self, mock_db):
+        """seed_default_agents should create extraction, edge_detection, consolidation."""
+        # The seed function calls result.scalars().first() to check for
+        # existing agents. Return a mock where scalars().first() is None.
+        empty_result = MagicMock()
+        empty_scalars = MagicMock()
+        empty_scalars.first = MagicMock(return_value=None)
+        empty_result.scalars = MagicMock(return_value=empty_scalars)
+        # second call: scalar_one_or_none used for per-role check? No, it just
+        # iterates roles. The only execute call in seed is the first check.
+        mock_db.execute = AsyncMock(return_value=empty_result)
+
+        # We'll track what agents are added via db.add
+        added_agents: list[Agent] = []
+
+        def capture_add(obj):
+            if isinstance(obj, Agent):
+                added_agents.append(obj)
+
+        mock_db.add = MagicMock(side_effect=capture_add)
+
+        await seed_default_agents(mock_db)
+        roles = sorted([a.role for a in added_agents])
+        assert roles == ["consolidation", "edge_detection", "extraction"]
+        assert len(added_agents) == 3
+
+    @pytest.mark.asyncio
+    async def test_skips_when_agents_exist(self, mock_db):
+        """seed_default_agents should not create duplicates if agents already exist."""
+        existing_agent = Agent(id="a1", role="extraction")
+        mock_db.execute = AsyncMock(return_value=_scalar_one_or_none(existing_agent))
+
+        mock_db.add = MagicMock()
+        await seed_default_agents(mock_db)
+        mock_db.add.assert_not_called()
+
+
+class TestResolveProviderChainPrimary:
+    """Tests for resolve_provider_chain with primary_provider_id."""
+
+    @pytest.mark.asyncio
+    async def test_prepends_primary_before_fallbacks(self, mock_db):
+        """When primary_provider_id is set, it should appear first in the chain."""
+        prov_primary = Provider(id="prov_p", name="Primary", provider_type="openai", base_url="u", model="m")
+        prov_fb1 = Provider(id="prov_f1", name="FB1", provider_type="openai", base_url="u", model="m")
+
+        agent = Agent(
+            id="a1", role="extraction",
+            primary_provider_id="prov_p",
+            fallback_provider_ids=["prov_f1"],
+        )
+
+        mock_db.execute = AsyncMock(side_effect=[
+            _scalar_one_or_none(agent),
+            _scalar_result_list([prov_primary, prov_fb1]),
+        ])
+
+        chain = await resolve_provider_chain(mock_db, "extraction")
+        ids = [p.id for p in chain]
+        assert ids == ["prov_p", "prov_f1"]
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_primary_from_fallbacks(self, mock_db):
+        """Primary should not appear twice even if listed in fallback_provider_ids."""
+        prov_p = Provider(id="prov_p", name="Primary", provider_type="openai", base_url="u", model="m")
+
+        agent = Agent(
+            id="a1", role="extraction",
+            primary_provider_id="prov_p",
+            fallback_provider_ids=["prov_p", "prov_f1"],
+        )
+
+        mock_db.execute = AsyncMock(side_effect=[
+            _scalar_one_or_none(agent),
+            _scalar_result_list([prov_p]),
+        ])
+
+        chain = await resolve_provider_chain(mock_db, "extraction")
+        ids = [p.id for p in chain]
+        # should appear once, at the front
+        assert ids == ["prov_p"]
+
+    @pytest.mark.asyncio
+    async def test_fallback_only_when_no_primary(self, mock_db):
+        """When primary_provider_id is None, chain uses fallback list only."""
+        prov_a = Provider(id="prov_a", name="A", provider_type="openai", base_url="u", model="m")
+        prov_b = Provider(id="prov_b", name="B", provider_type="anthropic", base_url="u", model="m")
+
+        agent = Agent(
+            id="a1", role="extraction",
+            primary_provider_id=None,
+            fallback_provider_ids=["prov_a", "prov_b"],
+        )
+
+        mock_db.execute = AsyncMock(side_effect=[
+            _scalar_one_or_none(agent),
+            _scalar_result_list([prov_a, prov_b]),
+        ])
+
+        chain = await resolve_provider_chain(mock_db, "extraction")
+        ids = [p.id for p in chain]
+        assert ids == ["prov_a", "prov_b"]
