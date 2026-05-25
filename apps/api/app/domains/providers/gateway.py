@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
-from app.models import ProviderConfig
+from app.models import Provider
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ class ProviderGateway:
     ) -> tuple[str, str, str, str, int]:
         """Return ``(provider_type, base_url, model, api_key, max_tokens)``."""
         async with async_session() as session:
-            stmt = select(ProviderConfig).where(ProviderConfig.role == model_role)
+            stmt = select(Provider).where(Provider.name == model_role)
             result = await session.execute(stmt)
             cfg = result.scalar_one_or_none()
 
@@ -61,7 +61,7 @@ class ProviderGateway:
                 cfg.provider_type,
                 cfg.base_url.rstrip("/"),
                 cfg.model,
-                cfg.api_key,
+                cfg.api_key_encrypted,
                 cfg.max_tokens,
             )
 

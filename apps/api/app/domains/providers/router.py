@@ -7,10 +7,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import ProviderConfig
+from app.models import Provider
 
 from .gateway import ProviderError, ProviderTimeoutError, gateway
-from .schemas import ProviderConfigCreate, ProviderConfigResponse, ProviderTestResponse
+from .schemas import ProviderCreate, ProviderResponse, ProviderTestResponse
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -20,12 +20,12 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[ProviderConfigResponse])
+@router.get("", response_model=list[ProviderResponse])
 async def list_providers(
     db: AsyncSession = Depends(get_db),
-) -> list[ProviderConfig]:
+) -> list[Provider]:
     """Return every configured provider (api_key excluded by schema)."""
-    result = await db.execute(select(ProviderConfig))
+    result = await db.execute(select(Provider))
     return list(result.scalars().all())
 
 
@@ -34,35 +34,37 @@ async def list_providers(
 # ---------------------------------------------------------------------------
 
 
-@router.put("/{role}", response_model=ProviderConfigResponse)
+@router.put("/{role}", response_model=ProviderResponse)
 async def upsert_provider(
     role: str,
-    body: ProviderConfigCreate,
+    body: ProviderCreate,
     db: AsyncSession = Depends(get_db),
-) -> ProviderConfig:
+) -> Provider:
     """Create or update the provider config for a given *role*."""
     result = await db.execute(
-        select(ProviderConfig).where(ProviderConfig.role == role)
+        select(Provider).where(Provider.name == role)
     )
     cfg = result.scalar_one_or_none()
 
     if cfg is None:
-        cfg = ProviderConfig(
-            id=ProviderConfig.new_id(),
-            role=role,
+        cfg = Provider(
+            id=Provider.new_id(),
+            name=role,
             provider_type=body.provider_type,
             base_url=body.base_url,
             model=body.model,
-            api_key=body.api_key,
+            api_key_encrypted=body.api_key,
             max_tokens=body.max_tokens,
+            is_enabled=body.is_enabled,
         )
         db.add(cfg)
     else:
         cfg.provider_type = body.provider_type
         cfg.base_url = body.base_url
         cfg.model = body.model
-        cfg.api_key = body.api_key
+        cfg.api_key_encrypted = body.api_key
         cfg.max_tokens = body.max_tokens
+        cfg.is_enabled = body.is_enabled
 
     await db.flush()
     await db.refresh(cfg)
@@ -81,7 +83,7 @@ async def delete_provider(
 ) -> None:
     """Remove the provider config for a given *role*."""
     result = await db.execute(
-        select(ProviderConfig).where(ProviderConfig.role == role)
+        select(Provider).where(Provider.name == role)
     )
     cfg = result.scalar_one_or_none()
     if cfg is None:
