@@ -79,7 +79,7 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
   const [model, setModel] = useState(provider?.model || "");
   const [apiKey, setApiKey] = useState("");
   const [maxTokens, setMaxTokens] = useState(provider?.max_tokens || 2000);
-  const [enabled, setEnabled] = useState(provider?.enabled !== false);
+  const [isEnabled, setIsEnabled] = useState(provider?.is_enabled !== false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
@@ -139,7 +139,7 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
         base_url: baseUrl,
         model,
         max_tokens: maxTokens,
-        enabled,
+        is_enabled: isEnabled,
       };
       if (apiKey.trim()) payload.api_key = apiKey.trim();
 
@@ -337,8 +337,8 @@ export default function ProviderConfigModal({ provider, mode = "custom", onClose
               <input
                 type="checkbox"
                 className="sr-only peer"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
+                checked={isEnabled}
+                onChange={(e) => setIsEnabled(e.target.checked)}
               />
               <div className="w-12 h-6 bg-[#464554] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4ade80]" />
             </label>

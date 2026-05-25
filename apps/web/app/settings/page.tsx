@@ -28,7 +28,7 @@ interface Provider {
   model: string;
   api_key?: string;
   max_tokens?: number;
-  enabled: boolean;
+  is_enabled: boolean;
 }
 
 interface Agent {
@@ -158,9 +158,15 @@ export default function SettingsPage() {
 
   const handleToggleProvider = async (provider: Provider) => {
     try {
-      await providersApi.update(provider.id, { enabled: !provider.enabled });
+      await providersApi.update(provider.id, {
+        name: provider.name,
+        provider_type: provider.provider_type,
+        base_url: provider.base_url,
+        model: provider.model,
+        is_enabled: !provider.is_enabled,
+      });
       setProviders((prev) =>
-        prev.map((p) => (p.id === provider.id ? { ...p, enabled: !p.enabled } : p))
+        prev.map((p) => (p.id === provider.id ? { ...p, is_enabled: !p.is_enabled } : p))
       );
     } catch (e: any) {
       alert(`Update failed: ${e.message}`);
@@ -459,7 +465,7 @@ export default function SettingsPage() {
                         Test Connection
                       </button>
                       <Toggle
-                        checked={provider.enabled}
+                        checked={provider.is_enabled}
                         onChange={() => handleToggleProvider(provider)}
                       />
                     </div>
@@ -542,7 +548,7 @@ export default function SettingsPage() {
                         onChange={(e) => handlePrimaryChange(role.value, e.target.value)}
                       >
                         <option value="">Select a provider...</option>
-                        {providers.filter((p) => p.enabled).map((p) => (
+                        {providers.filter((p) => p.is_enabled).map((p) => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
@@ -560,7 +566,7 @@ export default function SettingsPage() {
                               onChange={(e) => handleFallbackChange(role.value, index, e.target.value)}
                             >
                               <option value="">Select a provider...</option>
-                              {providers.filter((p) => p.enabled && p.id !== primary).map((p) => (
+                              {providers.filter((p) => p.is_enabled && p.id !== primary).map((p) => (
                                 <option key={p.id} value={p.id}>{p.name}</option>
                               ))}
                             </select>
