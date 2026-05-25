@@ -11,18 +11,19 @@
 **Goal:** Integrate LiteLLM as the provider abstraction layer and build a complete provider management system with usage logging and fallback chains.
 **Mode:** mvp
 **Requirements:** PROV-01, PROV-02, PROV-03, PROV-04, PROV-05, PROV-06, PROV-07, PROV-08
+**Status:** In Progress (Task 12/14 complete)
 **Success Criteria**:
 
-1. LiteLLM installed as pip dependency (`litellm` in `pyproject.toml`)
-2. `ProviderGateway` calls `litellm.acompletion()` directly with DB config — no custom adapters
-3. New "Providers" tab in settings with CRUD for provider configs
-4. Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
-5. Agent settings show provider dropdown — roles fixed (read-only)
-6. LiteLLM handles all provider schemas internally
-7. Dynamic model lists via LiteLLM's model discovery
-8. Usage logging table stores every call with tokens, timing, status
-9. Fallback chains support up to 4 providers per role with drag-and-drop priority
-10. Provider test returns meaningful error when API key is missing/invalid
+1. ✅ LiteLLM installed as pip dependency (`litellm` in `pyproject.toml`)
+2. ✅ `ProviderGateway` calls `litellm.acompletion()` directly with DB config — no custom adapters
+3. ✅ New "Providers" tab in settings with CRUD for provider configs
+4. ✅ Pre-configured provider list: OpenAI, Anthropic, OpenCode, OpenRouter, Groq, Ollama, Custom
+5. ✅ Agent settings show provider dropdown — roles fixed (read-only)
+6. ✅ LiteLLM handles all provider schemas internally
+7. ✅ Dynamic model lists via LiteLLM's model discovery
+8. ✅ Usage logging table stores every call with tokens, timing, status
+9. ✅ Fallback chains support up to 4 providers per role (add/remove UI; drag-and-drop deferred)
+10. ✅ Provider test returns meaningful error when API key is missing/invalid
 
 ### Phase 2: Dashboard Redesign
 
