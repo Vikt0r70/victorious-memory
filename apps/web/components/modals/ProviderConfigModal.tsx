@@ -1,54 +1,127 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { providersApi } from "@/lib/api";
-
-const ROLES = [
-  { value: "extraction", label: "Extraction" },
-  { value: "edge_detection", label: "Edge Detection" },
-  { value: "consolidation", label: "Consolidation" },
-];
 
 const PROVIDER_TYPES = [
   { value: "openai_compatible", label: "OpenAI Compatible" },
   { value: "anthropic", label: "Anthropic" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "ollama", label: "Ollama" },
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "groq", label: "Groq" },
+  { value: "custom", label: "Custom" },
 ];
 
-const PRESETS = [
-  { label: "Custom", base_url: "", model: "" },
-  { label: "OpenAI", base_url: "https://api.openai.com/v1", model: "gpt-4-turbo" },
-  { label: "Anthropic", base_url: "https://api.anthropic.com/v1", model: "claude-3-opus-20240229" },
-  { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { label: "Ollama", base_url: "http://localhost:11434/v1", model: "llama3" },
-  { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "openrouter/auto" },
+const TEMPLATES = [
+  {
+    label: "OpenAI",
+    provider_type: "openai_compatible",
+    base_url: "https://api.openai.com/v1",
+    model: "gpt-4-turbo",
+    max_tokens: 2000,
+  },
+  {
+    label: "Anthropic",
+    provider_type: "anthropic",
+    base_url: "https://api.anthropic.com/v1",
+    model: "claude-3-opus-20240229",
+    max_tokens: 2000,
+  },
+  {
+    label: "DeepSeek",
+    provider_type: "deepseek",
+    base_url: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    max_tokens: 2000,
+  },
+  {
+    label: "Ollama",
+    provider_type: "ollama",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3",
+    max_tokens: 2000,
+  },
+  {
+    label: "OpenRouter",
+    provider_type: "openrouter",
+    base_url: "https://openrouter.ai/api/v1",
+    model: "openrouter/auto",
+    max_tokens: 2000,
+  },
+  {
+    label: "Groq",
+    provider_type: "groq",
+    base_url: "https://api.groq.com/openai/v1",
+    model: "llama3-8b-8192",
+    max_tokens: 2000,
+  },
+  {
+    label: "Custom",
+    provider_type: "custom",
+    base_url: "",
+    model: "",
+    max_tokens: 2000,
+  },
 ];
 
 interface Props {
   provider?: any;
+  mode?: "template" | "custom";
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export default function ProviderConfigModal({ provider, onClose, onSaved }: Props) {
-  const [role, setRole] = useState(provider?.role || "extraction");
+export default function ProviderConfigModal({ provider, mode = "custom", onClose, onSaved }: Props) {
+  const [name, setName] = useState(provider?.name || "");
   const [providerType, setProviderType] = useState(provider?.provider_type || "openai_compatible");
-  const [preset, setPreset] = useState("Custom");
   const [baseUrl, setBaseUrl] = useState(provider?.base_url || "");
   const [model, setModel] = useState(provider?.model || "");
   const [apiKey, setApiKey] = useState("");
   const [maxTokens, setMaxTokens] = useState(provider?.max_tokens || 2000);
+  const [enabled, setEnabled] = useState(provider?.enabled !== false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showTemplatePicker, setShowTemplatePicker] = useState(mode === "template" && !provider);
+
+  // Auto-fill when provider type changes (only in custom mode, not editing existing)
+  useEffect(() => {
+    if (!provider && !showTemplatePicker) {
+      const template = TEMPLATES.find((t) => t.provider_type === providerType);
+      if (template && providerType !== "custom") {
+        setBaseUrl(template.base_url);
+        setModel(template.model);
+        setMaxTokens(template.max_tokens);
+      }
+    }
+  }, [providerType, provider, showTemplatePicker]);
+
+  const handleSelectTemplate = (template: typeof TEMPLATES[0]) => {
+    setSelectedTemplate(template.label);
+    setName(template.label);
+    setProviderType(template.provider_type);
+    setBaseUrl(template.base_url);
+    setModel(template.model);
+    setMaxTokens(template.max_tokens);
+    setShowTemplatePicker(false);
+  };
 
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     setError("");
     try {
-      const res = await providersApi.test(role);
-      setTestResult({ ok: res.status === "ok", message: res.response || res.status });
+      // If editing existing provider, test by ID
+      if (provider?.id) {
+        const res = await providersApi.test(provider.id);
+        setTestResult({ ok: res.status === "ok" || res.ok === true, message: res.response || res.status || res.message || "Test completed" });
+      } else {
+        // For new providers, we can't test by ID, so show info
+        setTestResult({ ok: true, message: "Save the provider first to test the connection by ID." });
+      }
     } catch (e: any) {
       setTestResult({ ok: false, message: e.message });
     } finally {
@@ -61,14 +134,20 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
     setError("");
     try {
       const payload: any = {
-        role,
+        name: name || `${providerType} Provider`,
         provider_type: providerType,
         base_url: baseUrl,
         model,
         max_tokens: maxTokens,
+        enabled,
       };
       if (apiKey.trim()) payload.api_key = apiKey.trim();
-      await providersApi.create(payload);
+
+      if (provider?.id) {
+        await providersApi.update(provider.id, payload);
+      } else {
+        await providersApi.create(payload);
+      }
       onSaved?.();
       onClose();
     } catch (e: any) {
@@ -78,17 +157,82 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
     }
   };
 
+  // Template picker view
+  if (showTemplatePicker) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div className="bg-[#1e293b] border border-[#464554] rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-[#464554]">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#c0c1ff]">library_add</span>
+              <h2 className="text-[18px] font-semibold text-[#e4e1ed]">Add Provider from Template</h2>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-[#c7c4d7] hover:text-[#e4e1ed] transition-colors"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          {/* Template Grid */}
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {TEMPLATES.map((template) => (
+              <button
+                key={template.label}
+                onClick={() => handleSelectTemplate(template)}
+                className="text-left bg-[#0d0d15] border border-[#464554] rounded-lg p-4 hover:border-[#c0c1ff] hover:bg-[#292932] transition-all group"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[#c0c1ff] group-hover:text-[#e1e0ff]">cloud</span>
+                  <h3 className="text-[16px] font-semibold text-[#e4e1ed]">{template.label}</h3>
+                </div>
+                <div className="space-y-1 text-[12px] text-[#c7c4d7]">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[#908fa0]">Type:</span>
+                    <span className="badge bg-[#292932] border-[#464554] text-[#c7c4d7]">{template.provider_type}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[#908fa0]">Model:</span>
+                    <span className="font-mono">{template.model}</span>
+                  </div>
+                  <div className="font-mono truncate">{template.base_url || "Custom endpoint"}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-end p-6 border-t border-[#464554]">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-[14px] text-[#c7c4d7] border border-[#464554] rounded-sm hover:bg-[#292932] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-[#1e293b] border border-[#464554] rounded-xl shadow-2xl w-full max-w-lg">
+      <div className="bg-[#1e293b] border border-[#464554] rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[#464554]">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[#c0c1ff]">settings</span>
-            <h2 className="text-[18px] font-semibold text-[#e4e1ed]">Configure Provider</h2>
+            <h2 className="text-[18px] font-semibold text-[#e4e1ed]">
+              {provider ? "Edit Provider" : "Add Provider"}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -100,20 +244,17 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
 
         {/* Body */}
         <div className="p-6 space-y-4">
-          {/* Role */}
+          {/* Name */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#c7c4d7] mb-1.5">
-              Role
+              Name
             </label>
-            <select
-              className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            >
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
+            <input
+              className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] placeholder-[#908fa0] focus:outline-none focus:border-[#c0c1ff]"
+              placeholder="My Provider"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
 
           {/* Provider Type */}
@@ -128,29 +269,6 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
             >
               {PROVIDER_TYPES.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Preset */}
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#c7c4d7] mb-1.5">
-              Preset
-            </label>
-            <select
-              className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
-              value={preset}
-              onChange={(e) => {
-                const p = PRESETS.find((x) => x.label === e.target.value);
-                setPreset(e.target.value);
-                if (p && p.label !== "Custom") {
-                  setBaseUrl(p.base_url);
-                  setModel(p.model);
-                }
-              }}
-            >
-              {PRESETS.map((p) => (
-                <option key={p.label} value={p.label}>{p.label}</option>
               ))}
             </select>
           </div>
@@ -210,6 +328,22 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
             />
           </div>
 
+          {/* Enabled Toggle */}
+          <div className="flex items-center justify-between py-2">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-[#c7c4d7]">
+              Enabled
+            </label>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+              <div className="w-12 h-6 bg-[#464554] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4ade80]" />
+            </label>
+          </div>
+
           {/* Test Result */}
           {testResult && (
             <div className={`text-[13px] border rounded-sm p-3 ${
@@ -264,11 +398,10 @@ export default function ProviderConfigModal({ provider, onClose, onSaved }: Prop
                 progress_activity
               </span>
             )}
-            Save Provider
+            {provider ? "Update Provider" : "Save Provider"}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
