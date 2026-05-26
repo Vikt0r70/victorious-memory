@@ -30,28 +30,29 @@
 **Goal:** Complete UI overhaul — fix all interactive elements, redesign graph visualization, and ensure every button works.
 **Mode:** mvp
 **Requirements:** UX-01, UX-02, UX-03, UX-04, ARCH-02
-**Status:** Planned
+**Status:** Complete ✓
 **Plans:** 3 plans
-Plans:
+
+Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Install dependencies, initialize shadcn/ui, create reusable components, refresh Sidebar and TopBar
+- [x] 02-01-PLAN.md — Install dependencies, initialize shadcn/ui, create reusable components, refresh Sidebar and TopBar
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Redesign Dashboard, Graph Explorer, Review Queue, Memory Repository, and Jobs pages
-- [ ] 02-03-PLAN.md — Redesign Settings shell with shadcn/ui Tabs while preserving Phase 1 state
+- [x] 02-02-PLAN.md — Redesign Dashboard, Graph Explorer, Review Queue, Memory Repository, and Jobs pages
+- [x] 02-03-PLAN.md — Redesign Settings shell with shadcn/ui Tabs while preserving Phase 1 state
 
 **Success Criteria**:
 
-1. All pages have consistent design language and dark mode
-2. Graph visualization uses best-in-class library with interactive node exploration
-3. Review queue shows pending memories with Approve/Reject buttons that work
-4. All clickable elements show proper cursor and hover states
-5. Memory repository table stable — no layout shifts when filtering
-6. Settings page fully functional with all sections working
-7. Navigation sidebar and routing work correctly
-8. Empty states handled gracefully across all pages
+1. ✅ All pages have consistent design language and dark mode
+2. ✅ Graph visualization uses best-in-class library with interactive node exploration
+3. ✅ Review queue shows pending memories with Approve/Reject buttons that work
+4. ✅ All clickable elements show proper cursor and hover states
+5. ✅ Memory repository table stable — no layout shifts when filtering
+6. ✅ Settings page fully functional with all sections working
+7. ✅ Navigation sidebar and routing work correctly
+8. ✅ Empty states handled gracefully across all pages
 
 ### Phase 3: Memory Lifecycle
 
