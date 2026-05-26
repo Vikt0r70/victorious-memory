@@ -2,7 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { memoriesApi } from "@/lib/api";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ErrorBanner from "@/components/ui/ErrorBanner";
+import EmptyState from "@/components/ui/EmptyState";
 import RejectReasonModal from "@/components/modals/RejectReasonModal";
+import EditMemoryModal from "@/components/modals/EditMemoryModal";
 
 const TYPE_COLORS: Record<string, string> = {
   decision: "bg-[#8083ff]/10 border-[#8083ff] text-[#8083ff]",
@@ -28,17 +32,21 @@ function timeAgo(d: string) {
 export default function ReviewPage() {
   const [memories, setMemories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectContent, setRejectContent] = useState("");
   const [similarMap, setSimilarMap] = useState<Record<string, any[]>>({});
+  const [editMemory, setEditMemory] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await memoriesApi.list({ status: "pending_review", per_page: "50" });
       setMemories(data.items || []);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e.message || "Failed to load review queue");
     } finally {
       setLoading(false);
     }
@@ -47,8 +55,16 @@ export default function ReviewPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleApprove = async (id: string) => {
-    await memoriesApi.approve(id);
-    load();
+    setIsActionLoading(true);
+    setError(null);
+    try {
+      await memoriesApi.approve(id);
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to approve memory");
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const handleReject = (id: string, content: string) => {
@@ -57,38 +73,79 @@ export default function ReviewPage() {
   };
 
   const handleRejectConfirm = async (id: string, reason: string) => {
-    await memoriesApi.reject(id, reason);
-    setRejectId(null);
-    load();
+    setIsActionLoading(true);
+    setError(null);
+    try {
+      await memoriesApi.reject(id, reason);
+      setRejectId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to reject memory");
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const handleDefer = (id: string) => {
     // Defer is a no-op — stays in queue
-    console.log("Deferred", id);
+  };
+
+  const handleEditApprove = (memory: any) => {
+    setEditMemory(memory);
+  };
+
+  const handleEditSaved = async (memory: any) => {
+    setIsActionLoading(true);
+    setError(null);
+    try {
+      await memoriesApi.approve(memory.id);
+      setEditMemory(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to approve edited memory");
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const loadSimilar = async (memory: any) => {
     try {
       const res = await memoriesApi.search(memory.content, memory.project_id, 3);
       setSimilarMap((prev) => ({ ...prev, [memory.id]: res.items || [] }));
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e.message || "Failed to load similar memories");
     }
   };
 
   const handleBulkApproveHigh = async () => {
     const high = memories.filter((m) => (m.confidence_score || 0) >= 0.85);
     if (high.length > 0) {
-      await memoriesApi.bulk("approve", high.map((m) => m.id));
-      load();
+      setIsActionLoading(true);
+      setError(null);
+      try {
+        await memoriesApi.bulk("approve", high.map((m) => m.id));
+        await load();
+      } catch (e: any) {
+        setError(e.message || "Failed to bulk approve");
+      } finally {
+        setIsActionLoading(false);
+      }
     }
   };
 
   const handleBulkRejectLow = async () => {
     const low = memories.filter((m) => (m.confidence_score || 0) < 0.3);
     if (low.length > 0) {
-      await memoriesApi.bulk("reject", low.map((m) => m.id));
-      load();
+      setIsActionLoading(true);
+      setError(null);
+      try {
+        await memoriesApi.bulk("reject", low.map((m) => m.id));
+        await load();
+      } catch (e: any) {
+        setError(e.message || "Failed to bulk reject");
+      } finally {
+        setIsActionLoading(false);
+      }
     }
   };
 
@@ -112,14 +169,16 @@ export default function ReviewPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleBulkApproveHigh}
-            className="flex items-center gap-1 px-3 py-2 border border-[#4ade80] text-[#4ade80] rounded-sm text-[14px] hover:bg-[#4ade80]/10 transition-colors"
+            disabled={isActionLoading}
+            className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#4ade80] text-[#4ade80] rounded-sm text-[14px] hover:bg-[#4ade80]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[16px]">done_all</span>
             Approve High Conf
           </button>
           <button
             onClick={handleBulkRejectLow}
-            className="flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10 transition-colors"
+            disabled={isActionLoading}
+            className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[16px]">close</span>
             Reject Low Conf
@@ -127,17 +186,21 @@ export default function ReviewPage() {
         </div>
       </div>
 
+      {error && <ErrorBanner message={error} />}
+
+      {isActionLoading && (
+        <div className="flex items-center justify-center py-4">
+          <LoadingSpinner />
+        </div>
+      )}
+
       {/* Cards */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <span className="material-symbols-outlined animate-spin text-4xl text-[#c0c1ff]">progress_activity</span>
+          <LoadingSpinner />
         </div>
       ) : memories.length === 0 ? (
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-12 text-center">
-          <span className="material-symbols-outlined text-6xl text-[#4ade80] mb-4">check_circle</span>
-          <h2 className="text-[24px] font-semibold mb-2">All Clear!</h2>
-          <p className="text-[#c7c4d7]">No memories pending review.</p>
-        </div>
+        <EmptyState title="All Clear!" message="No memories pending review." icon="check_circle" />
       ) : (
         <div className="space-y-4">
           {memories.map((m, i) => (
@@ -188,7 +251,8 @@ export default function ReviewPage() {
                 <div className="mt-3">
                   <button
                     onClick={() => loadSimilar(m)}
-                    className="text-[12px] text-[#c0c1ff] hover:underline flex items-center gap-1"
+                    disabled={isActionLoading}
+                    className="cursor-pointer text-[12px] text-[#c0c1ff] hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-[14px]">search</span>
                     Find similar existing memories
@@ -215,24 +279,31 @@ export default function ReviewPage() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[rgba(51,65,85,0.3)]">
                 <button
                   onClick={() => handleDefer(m.id)}
-                  className="px-3 py-1.5 text-[14px] text-[#908fa0] hover:text-[#c7c4d7] transition-colors"
+                  disabled={isActionLoading}
+                  className="cursor-pointer px-3 py-1.5 text-[14px] text-[#908fa0] hover:text-[#c7c4d7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Defer
                 </button>
                 <button
                   onClick={() => handleReject(m.id, m.content)}
-                  className="px-4 py-1.5 text-[14px] bg-[#93000a] text-[#ffb4ab] rounded-sm hover:bg-[#93000a]/80 transition-colors flex items-center gap-1"
+                  disabled={isActionLoading}
+                  className="cursor-pointer px-4 py-1.5 text-[14px] bg-[#93000a] text-[#ffb4ab] rounded-sm hover:bg-[#93000a]/80 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-[16px]">block</span>
                   Reject
                 </button>
-                <button className="px-4 py-1.5 text-[14px] border border-[#3b82f6] text-[#3b82f6] rounded-sm hover:bg-[#3b82f6]/10 transition-colors flex items-center gap-1">
+                <button
+                  onClick={() => handleEditApprove(m)}
+                  disabled={isActionLoading}
+                  className="cursor-pointer px-4 py-1.5 text-[14px] border border-[#3b82f6] text-[#3b82f6] rounded-sm hover:bg-[#3b82f6]/10 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <span className="material-symbols-outlined text-[16px]">edit</span>
                   Edit & Approve
                 </button>
                 <button
                   onClick={() => handleApprove(m.id)}
-                  className="px-4 py-1.5 text-[14px] bg-[#4ade80] text-[#0d0d15] font-semibold rounded-sm hover:bg-[#22c55e] transition-colors flex items-center gap-1"
+                  disabled={isActionLoading}
+                  className="cursor-pointer px-4 py-1.5 text-[14px] bg-[#4ade80] text-[#0d0d15] font-semibold rounded-sm hover:bg-[#22c55e] transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-[16px]">check</span>
                   Approve
@@ -252,7 +323,15 @@ export default function ReviewPage() {
           onConfirm={handleRejectConfirm}
         />
       )}
+
+      {/* Edit Modal */}
+      {editMemory && (
+        <EditMemoryModal
+          memory={editMemory}
+          onClose={() => setEditMemory(null)}
+          onSaved={() => handleEditSaved(editMemory)}
+        />
+      )}
     </div>
   );
 }
-
