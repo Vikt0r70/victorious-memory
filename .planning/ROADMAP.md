@@ -29,7 +29,15 @@
 
 **Goal:** Complete UI overhaul — fix all interactive elements, redesign graph visualization, and ensure every button works.
 **Mode:** mvp
-**Requirements:** UX-01, UX-02, UX-03, UX-04
+**Requirements:** UX-01, UX-02, UX-03, UX-04, ARCH-02
+**Status:** Planned
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Install dependencies, initialize shadcn/ui, create reusable components, refresh Sidebar and TopBar
+- [ ] 02-02-PLAN.md — Redesign Dashboard, Graph Explorer, Review Queue, Memory Repository, and Jobs pages
+- [ ] 02-03-PLAN.md — Redesign Settings shell with shadcn/ui Tabs while preserving Phase 1 state
+
 **Success Criteria**:
 
 1. All pages have consistent design language and dark mode
