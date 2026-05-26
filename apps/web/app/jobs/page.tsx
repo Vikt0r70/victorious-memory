@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { jobsApi } from "@/lib/api";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ErrorBanner from "@/components/ui/ErrorBanner";
+import EmptyState from "@/components/ui/EmptyState";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-[#d97721]/10 border-[#d97721] text-[#d97721]",
@@ -34,9 +37,11 @@ export default function JobsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const params: Record<string, string> = { page: String(page), per_page: "50" };
       if (statusFilter) params.status = statusFilter;
@@ -47,15 +52,28 @@ export default function JobsPage() {
       setJobs(jobData.items || []);
       setTotal(jobData.total || 0);
       setStats(statsData);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    } catch (e: any) {
+      setError(e.message || "Failed to load jobs");
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [page, statusFilter]);
 
-  const handleRetry = async (id: string) => { await jobsApi.retry(id); load(); };
-  const handleCancel = async (id: string) => { await jobsApi.cancel(id); load(); };
-  const handleRetryAll = async () => { await jobsApi.retryAllFailed(); load(); };
+  const handleRetry = async (id: string) => {
+    setError(null);
+    try { await jobsApi.retry(id); load(); }
+    catch (e: any) { setError(e.message || "Failed to retry job"); }
+  };
+  const handleCancel = async (id: string) => {
+    setError(null);
+    try { await jobsApi.cancel(id); load(); }
+    catch (e: any) { setError(e.message || "Failed to cancel job"); }
+  };
+  const handleRetryAll = async () => {
+    setError(null);
+    try { await jobsApi.retryAllFailed(); load(); }
+    catch (e: any) { setError(e.message || "Failed to retry all failed jobs"); }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -65,14 +83,16 @@ export default function JobsPage() {
           <p className="text-[#c7c4d7] text-[14px] mt-1">Background memory extraction pipeline</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={load} className="flex items-center gap-1 px-3 py-2 border border-[#464554] rounded-sm text-[14px] text-[#c7c4d7] hover:bg-[#292932]">
+          <button onClick={load} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#464554] rounded-sm text-[14px] text-[#c7c4d7] hover:bg-[#292932] transition-colors duration-200">
             <span className="material-symbols-outlined text-[16px]">refresh</span>Refresh
           </button>
-          <button onClick={handleRetryAll} className="flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10">
+          <button onClick={handleRetryAll} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10 transition-colors duration-200">
             <span className="material-symbols-outlined text-[16px]">replay</span>Retry All Failed
           </button>
         </div>
       </div>
+
+      {error && <ErrorBanner message={error} />}
 
       {/* Stats */}
       {stats && (
@@ -85,7 +105,7 @@ export default function JobsPage() {
             { label: "Avg Time", value: stats.avg_processing_time_ms ? formatDuration(stats.avg_processing_time_ms) : "—", icon: "timer" },
             { label: "Last Completed", value: stats.last_completed_at ? timeAgo(stats.last_completed_at) : "—", icon: "schedule" },
           ].map((s) => (
-            <div key={s.label} className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-4 hover-glow stat-card-transition">
+            <div key={s.label} className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-4 hover-glow stat-card-transition hover:bg-[#292932] transition-colors duration-200">
               <div className="flex justify-between items-start">
                 <div className="text-[13px] text-[#c7c4d7]">{s.label}</div>
                 <span className={`material-symbols-outlined text-sm ${s.color || "text-[#c0c1ff]"}`}>{s.icon}</span>
@@ -102,7 +122,7 @@ export default function JobsPage() {
           <button
             key={s}
             onClick={() => { setStatusFilter(s); setPage(1); }}
-            className={`px-3 py-1.5 text-[13px] rounded-sm border transition-colors ${
+            className={`cursor-pointer px-3 py-1.5 text-[13px] rounded-sm border transition-colors duration-200 ${
               statusFilter === s
                 ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]"
                 : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"
@@ -120,35 +140,38 @@ export default function JobsPage() {
         </div>
         {loading ? (
           <div className="flex justify-center py-16">
-            <span className="material-symbols-outlined animate-spin text-3xl text-[#c0c1ff]">progress_activity</span>
+            <LoadingSpinner />
           </div>
-        ) : jobs.map((j) => (
-          <div key={j.id} className="grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-[#334155]/20">
-            <div className="font-mono text-[13px] text-[#e4e1ed] truncate">{j.id}</div>
-            <div className="font-mono text-[13px] text-[#c0c1ff] truncate">{j.exchange_id}</div>
-            <div><span className={`badge border ${STATUS_STYLES[j.status === "done" ? "completed" : j.status] || STATUS_STYLES.pending}`}>{j.status === "done" ? "completed" : j.status}</span></div>
-            <div className="font-mono text-[13px] text-[#c7c4d7]">{j.attempts}/{j.max_attempts}</div>
-            <div className="text-[13px] text-[#ffb4ab] truncate">{j.error || "-"}</div>
-            <div className="font-mono text-[13px] text-[#c7c4d7]">{timeAgo(j.created_at)}</div>
-            <div className="font-mono text-[13px] text-[#c7c4d7]">
-              {j.started_at && j.completed_at ? formatDuration(new Date(j.completed_at).getTime() - new Date(j.started_at).getTime()) : "—"}
+        ) : jobs.length === 0 ? (
+          <EmptyState title="No jobs found" message="Background extraction jobs will appear here." icon="work" />
+        ) : (
+          jobs.map((j) => (
+            <div key={j.id} className="cursor-pointer grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-[#292932] transition-colors duration-200">
+              <div className="font-mono text-[13px] text-[#e4e1ed] truncate">{j.id}</div>
+              <div className="font-mono text-[13px] text-[#c0c1ff] truncate">{j.exchange_id}</div>
+              <div><span className={`badge border ${STATUS_STYLES[j.status === "done" ? "completed" : j.status] || STATUS_STYLES.pending}`}>{j.status === "done" ? "completed" : j.status}</span></div>
+              <div className="font-mono text-[13px] text-[#c7c4d7]">{j.attempts}/{j.max_attempts}</div>
+              <div className="text-[13px] text-[#ffb4ab] truncate">{j.error || "-"}</div>
+              <div className="font-mono text-[13px] text-[#c7c4d7]">{timeAgo(j.created_at)}</div>
+              <div className="font-mono text-[13px] text-[#c7c4d7]">
+                {j.started_at && j.completed_at ? formatDuration(new Date(j.completed_at).getTime() - new Date(j.started_at).getTime()) : "—"}
+              </div>
+              <div className="flex gap-2">
+                {j.status === "failed" && (
+                  <button onClick={() => handleRetry(j.id)} className="cursor-pointer text-[#c0c1ff] hover:text-[#e1e0ff]" title="Retry">
+                    <span className="material-symbols-outlined text-[18px]">replay</span>
+                  </button>
+                )}
+                {j.status === "pending" && (
+                  <button onClick={() => handleCancel(j.id)} className="cursor-pointer text-[#908fa0] hover:text-[#ffb4ab]" title="Cancel">
+                    <span className="material-symbols-outlined text-[18px]">cancel</span>
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {j.status === "failed" && (
-                <button onClick={() => handleRetry(j.id)} className="text-[#c0c1ff] hover:text-[#e1e0ff]" title="Retry">
-                  <span className="material-symbols-outlined text-[18px]">replay</span>
-                </button>
-              )}
-              {j.status === "pending" && (
-                <button onClick={() => handleCancel(j.id)} className="text-[#908fa0] hover:text-[#ffb4ab]" title="Cancel">
-                  <span className="material-symbols-outlined text-[18px]">cancel</span>
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
 }
-
