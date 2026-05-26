@@ -4,8 +4,13 @@ import { useEffect, useState, useRef } from "react";
 import { providersApi, agentsApi, usageApi, settingsApi, systemApi } from "@/lib/api";
 import ProviderConfigModal from "@/components/modals/ProviderConfigModal";
 import ConfirmPurgeModal from "@/components/modals/ConfirmPurgeModal";
-
-const TABS = ["Providers", "Extraction", "Auto-Approve", "Lifecycle", "Plugin", "Data"];
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ErrorBanner from "@/components/ui/ErrorBanner";
+import EmptyState from "@/components/ui/EmptyState";
+import UsageLogTable from "@/components/settings/UsageLogTable";
 
 const MEMORY_TYPES = [
   "decision", "preference", "constraint", "bugfix", "lesson",
@@ -50,12 +55,12 @@ interface UsageLog {
 }
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState(0);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [usageLogs, setUsageLogs] = useState<UsageLog[]>([]);
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [modalMode, setModalMode] = useState<"template" | "custom">("custom");
@@ -100,8 +105,8 @@ export default function SettingsPage() {
       const sett: Record<string, any> = {};
       (sRes.items || []).forEach((i: any) => { sett[i.key] = i.value; });
       setSettings(sett);
-    } catch (e) {
-      console.error("Failed to load settings data:", e);
+    } catch (e: any) {
+      setError(e.message || "Failed to load settings data");
     } finally {
       setLoading(false);
     }
@@ -329,7 +334,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-16">
-        <span className="material-symbols-outlined animate-spin text-3xl text-[#c0c1ff]">progress_activity</span>
+        <LoadingSpinner />
       </div>
     );
   }
@@ -343,26 +348,49 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-[#464554]">
-        {TABS.map((t, i) => (
-          <button
-            key={t}
-            onClick={() => setTab(i)}
-            className={`px-3 py-2.5 text-[14px] font-medium rounded-t-sm border-b-2 transition-colors duration-200 ${
-              tab === i
-                ? "border-[#c0c1ff] text-[#c0c1ff]"
-                : "border-transparent text-[#c7c4d7] hover:bg-[#292932] hover:text-[#e4e1ed]"
-            }`}
+      <Tabs defaultValue="providers">
+        <TabsList variant="line" className="border-b border-[#464554] w-full justify-start gap-0 bg-transparent">
+          <TabsTrigger
+            value="providers"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
           >
-            {t}
-          </button>
-        ))}
-      </div>
+            Providers
+          </TabsTrigger>
+          <TabsTrigger
+            value="extraction"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+          >
+            Extraction
+          </TabsTrigger>
+          <TabsTrigger
+            value="auto-approve"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+          >
+            Auto-Approve
+          </TabsTrigger>
+          <TabsTrigger
+            value="lifecycle"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+          >
+            Lifecycle
+          </TabsTrigger>
+          <TabsTrigger
+            value="plugin"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+          >
+            Plugin
+          </TabsTrigger>
+          <TabsTrigger
+            value="data"
+            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+          >
+            Data
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Providers */}
-      {tab === 0 && (
-        <div className="space-y-8">
+        {/* Providers */}
+        <TabsContent value="providers">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-8">
           {/* Provider Registry */}
           <section>
             <div className="flex items-center justify-between mb-4">
@@ -397,11 +425,11 @@ export default function SettingsPage() {
             </div>
 
             {providers.length === 0 ? (
-              <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-8 text-center">
-                <span className="material-symbols-outlined text-4xl text-[#908fa0] mb-2">cloud_off</span>
-                <p className="text-[14px] text-[#c7c4d7]">No providers configured yet.</p>
-                <p className="text-[12px] text-[#908fa0] mt-1">Add a provider from a template or configure a custom one.</p>
-              </div>
+              <EmptyState
+                title="No providers configured yet."
+                message="Add a provider from the templates below."
+                icon="cloud_off"
+              />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {providers.map((provider) => (
@@ -464,10 +492,10 @@ export default function SettingsPage() {
                         )}
                         Test Connection
                       </button>
-                      <Toggle
-                        checked={provider.is_enabled}
-                        onChange={() => handleToggleProvider(provider)}
-                      />
+                        <Switch
+                          checked={provider.is_enabled}
+                          onCheckedChange={() => handleToggleProvider(provider)}
+                        />
                     </div>
 
                     {testResults[provider.id] && (
@@ -613,79 +641,18 @@ export default function SettingsPage() {
           </section>
 
           {/* Usage Logs */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-[20px] font-semibold text-[#e4e1ed]">Usage Logs</h2>
-                <p className="text-[13px] text-[#c7c4d7]">Recent LLM calls and their performance</p>
-              </div>
-              <select
-                className="bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[13px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
-                value={usageFilter}
-                onChange={(e) => setUsageFilter(e.target.value)}
-              >
-                <option value="all">All Agents</option>
-                {AGENT_ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-[#464554]">
-                      <th className="text-left p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Agent</th>
-                      <th className="text-left p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Provider</th>
-                      <th className="text-left p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Model</th>
-                      <th className="text-right p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Tokens</th>
-                      <th className="text-right p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Latency</th>
-                      <th className="text-left p-3 text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[rgba(51,65,85,0.3)]">
-                    {filteredUsageLogs.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-[#908fa0]">
-                          No usage logs found.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredUsageLogs.slice(0, 50).map((log) => (
-                        <tr key={log.id} className="hover:bg-[#292932]/50 transition-colors">
-                          <td className="p-3 text-[#e4e1ed]">
-                            <span className="badge bg-[#292932] border-[#464554] text-[#c7c4d7]">{log.agent_role}</span>
-                          </td>
-                          <td className="p-3 text-[#c7c4d7]">{log.provider_name || log.provider_id}</td>
-                          <td className="p-3 text-[#c7c4d7] font-mono">{log.model || "—"}</td>
-                          <td className="p-3 text-right text-[#c7c4d7] font-mono">{log.total_tokens?.toLocaleString() || "—"}</td>
-                          <td className="p-3 text-right text-[#c7c4d7] font-mono">{log.latency_ms ? `${log.latency_ms}ms` : "—"}</td>
-                          <td className="p-3">
-                            <span className={`badge border ${
-                              log.status === "success"
-                                ? "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]"
-                                : log.status === "error"
-                                ? "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]"
-                                : "bg-[#908fa0]/10 border-[#908fa0] text-[#908fa0]"
-                            }`}>
-                              {log.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
+          <UsageLogTable
+            data={filteredUsageLogs}
+            filter={usageFilter}
+            onFilterChange={setUsageFilter}
+            agentRoles={AGENT_ROLES}
+          />
+        </Card>
+      </TabsContent>
 
       {/* Extraction Config */}
-      {tab === 1 && (
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
+      <TabsContent value="extraction">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
           <div className="flex items-center gap-2 mb-2">
             <span className="material-symbols-outlined text-[#c0c1ff]">settings_suggest</span>
             <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Extraction Worker Settings</h3>
@@ -729,9 +696,9 @@ export default function SettingsPage() {
               <div className="text-[14px] text-[#e4e1ed]">Extraction Enabled</div>
               <div className="text-[12px] text-[#908fa0]">Master on/off for extraction worker</div>
             </div>
-            <Toggle
+            <Switch
               checked={getSetting("extraction.enabled", true)}
-              onChange={(v) => saveSetting("extraction.enabled", v)}
+              onCheckedChange={(v) => saveSetting("extraction.enabled", v)}
             />
           </div>
           <div className="flex items-center justify-between py-3">
@@ -740,17 +707,17 @@ export default function SettingsPage() {
               <div className="text-[12px] text-[#908fa0]">Skip LLM, use keyword extraction only</div>
               <div className="text-[12px] text-[#d97721] mt-0.5">Significantly reduces extraction quality</div>
             </div>
-            <Toggle
+            <Switch
               checked={getSetting("extraction.keyword_only_mode", false)}
-              onChange={(v) => saveSetting("extraction.keyword_only_mode", v)}
+              onCheckedChange={(v) => saveSetting("extraction.keyword_only_mode", v)}
             />
           </div>
-        </div>
-      )}
+        </Card>
+      </TabsContent>
 
       {/* Auto-Approve */}
-      {tab === 2 && (
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
+      <TabsContent value="auto-approve">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
           <div className="flex items-center gap-2 mb-2">
             <span className="material-symbols-outlined text-[#c0c1ff]">rule</span>
             <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Auto-Approve Rules</h3>
@@ -758,7 +725,7 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
             <div className="text-[14px] text-[#e4e1ed]">Auto-Approve Enabled</div>
-            <Toggle checked={getSetting("approval.auto_approve_enabled", true)} onChange={(v) => saveSetting("approval.auto_approve_enabled", v)} />
+            <Switch checked={getSetting("approval.auto_approve_enabled", true)} onCheckedChange={(v) => saveSetting("approval.auto_approve_enabled", v)} />
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
@@ -771,12 +738,12 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
             <div className="text-[14px] text-[#e4e1ed]">Never Auto-Approve Contradictions</div>
-            <Toggle checked={getSetting("approval.never_auto_approve_contradictions", true)} onChange={(v) => saveSetting("approval.never_auto_approve_contradictions", v)} />
+            <Switch checked={getSetting("approval.never_auto_approve_contradictions", true)} onCheckedChange={(v) => saveSetting("approval.never_auto_approve_contradictions", v)} />
           </div>
 
           <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
             <div className="text-[14px] text-[#e4e1ed]">Require Review for Global</div>
-            <Toggle checked={getSetting("approval.require_review_for_global", false)} onChange={(v) => saveSetting("approval.require_review_for_global", v)} />
+            <Switch checked={getSetting("approval.require_review_for_global", false)} onCheckedChange={(v) => saveSetting("approval.require_review_for_global", v)} />
           </div>
 
           {/* Allowed Types */}
@@ -832,12 +799,12 @@ export default function SettingsPage() {
               })}
             </div>
           </div>
-        </div>
-      )}
+        </Card>
+      </TabsContent>
 
       {/* Lifecycle */}
-      {tab === 3 && (
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
+      <TabsContent value="lifecycle">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
           <div className="flex items-center gap-2 mb-2">
             <span className="material-symbols-outlined text-[#c0c1ff]">hourglass_empty</span>
             <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Memory Lifecycle Config</h3>
@@ -848,7 +815,7 @@ export default function SettingsPage() {
               <div className="text-[14px] text-[#e4e1ed]">Decay Enabled</div>
               <div className="text-[12px] text-[#908fa0]">Gradually reduce confidence of unused memories</div>
             </div>
-            <Toggle checked={getSetting("lifecycle.decay_enabled", false)} onChange={(v) => saveSetting("lifecycle.decay_enabled", v)} />
+            <Switch checked={getSetting("lifecycle.decay_enabled", false)} onCheckedChange={(v) => saveSetting("lifecycle.decay_enabled", v)} />
           </div>
 
           <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.decay_enabled", false) ? "opacity-40" : ""}`}>
@@ -877,7 +844,7 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
             <div className="text-[14px] text-[#e4e1ed]">Consolidation Enabled</div>
-            <Toggle checked={getSetting("lifecycle.consolidation_enabled", false)} onChange={(v) => saveSetting("lifecycle.consolidation_enabled", v)} />
+            <Switch checked={getSetting("lifecycle.consolidation_enabled", false)} onCheckedChange={(v) => saveSetting("lifecycle.consolidation_enabled", v)} />
           </div>
 
           <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.consolidation_enabled", false) ? "opacity-40" : ""}`}>
@@ -913,12 +880,12 @@ export default function SettingsPage() {
               onChange={(e) => saveSetting("lifecycle.cleanup_rejected_after_days", parseInt(e.target.value))}
             />
           </div>
-        </div>
-      )}
+        </Card>
+      </TabsContent>
 
       {/* Plugin */}
-      {tab === 4 && (
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
+      <TabsContent value="plugin">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
           <div className="flex items-center gap-2 mb-2">
             <span className="material-symbols-outlined text-[#c0c1ff]">extension</span>
             <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Plugin Configuration</h3>
@@ -937,7 +904,7 @@ export default function SettingsPage() {
                 <div className="text-[12px] text-[#908fa0]">{f.desc}</div>
               </div>
               {f.type === "toggle" ? (
-                <Toggle checked={getSetting(f.key, f.default)} onChange={(v) => saveSetting(f.key, v)} />
+                <Switch checked={getSetting(f.key, f.default)} onCheckedChange={(v) => saveSetting(f.key, v)} />
               ) : f.type === "number" ? (
                 <input
                   type="number"
@@ -955,12 +922,12 @@ export default function SettingsPage() {
               )}
             </div>
           ))}
-        </div>
-      )}
+        </Card>
+      </TabsContent>
 
       {/* Data Management */}
-      {tab === 5 && (
-        <div className="space-y-4">
+      <TabsContent value="data">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-4">
           <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
             <div className="flex items-center gap-2 mb-2">
               <span className="material-symbols-outlined text-[#c0c1ff]">download</span>
@@ -1039,8 +1006,9 @@ export default function SettingsPage() {
               <span className="material-symbols-outlined text-[18px]">delete_forever</span>Purge All Data
             </button>
           </div>
-        </div>
-      )}
+        </Card>
+      </TabsContent>
+      </Tabs>
 
       {/* Provider Modal */}
       {showProviderModal && (
@@ -1100,17 +1068,4 @@ export default function SettingsPage() {
   );
 }
 
-// Toggle Switch Component
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="relative inline-flex items-center cursor-pointer">
-      <input
-        type="checkbox"
-        className="sr-only peer"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <div className="w-12 h-6 bg-[#464554] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#4ade80]" />
-    </label>
-  );
-}
+
