@@ -32,9 +32,13 @@
 **Requirements:** UX-01, UX-02, UX-03, UX-04, ARCH-02
 **Status:** Planned
 **Plans:** 3 plans
+Plans:
+**Wave 1**
 
-Plans:
 - [ ] 02-01-PLAN.md — Install dependencies, initialize shadcn/ui, create reusable components, refresh Sidebar and TopBar
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02-PLAN.md — Redesign Dashboard, Graph Explorer, Review Queue, Memory Repository, and Jobs pages
 - [ ] 02-03-PLAN.md — Redesign Settings shell with shadcn/ui Tabs while preserving Phase 1 state
 
