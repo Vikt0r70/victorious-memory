@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { memoriesApi, jobsApi, activityApi, projectsApi } from "@/lib/api";
+import { Card, CardContent } from "@/components/ui/card";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ErrorBanner from "@/components/ui/ErrorBanner";
+import EmptyState from "@/components/ui/EmptyState";
 
 function StatCard({
   title,
@@ -26,7 +30,7 @@ function StatCard({
 }) {
   return (
     <div
-      className={`bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-4 flex flex-col gap-2 relative overflow-hidden group fade-in-up ${delay} hover-glow stat-card-transition`}
+      className={`flex flex-col gap-2 relative overflow-hidden group fade-in-up ${delay} hover-glow stat-card-transition hover:translate-y-[-2px] transition-all duration-300`}
     >
       <div className="flex justify-between items-start">
         <div className="text-[13px] text-[#c7c4d7]">{title}</div>
@@ -97,6 +101,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<any>(null);
   const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -114,8 +119,8 @@ export default function DashboardPage() {
         setActivity(a.items || []);
         setProjects(p);
         setHealth(h);
-      } catch (e) {
-        console.error("Dashboard load error:", e);
+      } catch (e: any) {
+        setError(e.message || "Failed to load dashboard data");
       } finally {
         setLoading(false);
       }
@@ -126,9 +131,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <span className="material-symbols-outlined animate-spin text-4xl text-[#c0c1ff]">
-          progress_activity
-        </span>
+        <LoadingSpinner />
       </div>
     );
   }
@@ -143,65 +146,91 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {error && <ErrorBanner message={error} />}
+
       {/* Stats Cards */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard
-          title="Total Memories"
-          value={total.toLocaleString()}
-          icon="memory"
-          delay="delay-100"
-        />
-        <StatCard
-          title="Active / Total"
-          value={`${pct}%`}
-          icon="pie_chart"
-          iconColor="text-[#bcc7de]"
-          progress={parseFloat(pct)}
-          delay="delay-200"
-        />
-        <StatCard
-          title="Pending Review"
-          value={pending.toLocaleString()}
-          icon=""
-          badge={pending > 0 ? "CRITICAL" : undefined}
-          subtitleColor={pending > 0 ? "text-[#d97721]" : undefined}
-          subtitle="Requires human verification"
-          delay="delay-300"
-        />
-        <StatCard
-          title="Active Projects"
-          value={projectCount.toLocaleString()}
-          icon="folder_open"
-          iconColor="text-[#494bd6]"
-          delay="delay-400"
-        />
-        <StatCard
-          title="Extraction Jobs"
-          value={jobsRunning.toLocaleString()}
-          icon="engineering"
-          iconColor="text-[#bcc7de]"
-          subtitle={
-            jobsFailed > 0
-              ? `${jobsFailed} failed`
-              : `${jobStats?.total || 0} total`
-          }
-          subtitleColor={jobsFailed > 0 ? "text-[#ffb4ab]" : undefined}
-          delay="delay-500"
-        />
-        <StatCard
-          title="System Health"
-          value={health?.status === "ok" ? "Healthy" : "Check"}
-          icon="monitor_heart"
-          iconColor={health?.status === "ok" ? "text-[#4ade80]" : "text-[#ffb4ab]"}
-          subtitle={health?.version ? `v${health.version}` : "All systems nominal"}
-          delay="delay-600"
-        />
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="Total Memories"
+              value={total.toLocaleString()}
+              icon="memory"
+              delay="delay-100"
+            />
+          </CardContent>
+        </Card>
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="Active / Total"
+              value={`${pct}%`}
+              icon="pie_chart"
+              iconColor="text-[#bcc7de]"
+              progress={parseFloat(pct)}
+              delay="delay-200"
+            />
+          </CardContent>
+        </Card>
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="Pending Review"
+              value={pending.toLocaleString()}
+              icon=""
+              badge={pending > 0 ? "CRITICAL" : undefined}
+              subtitleColor={pending > 0 ? "text-[#d97721]" : undefined}
+              subtitle="Requires human verification"
+              delay="delay-300"
+            />
+          </CardContent>
+        </Card>
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="Active Projects"
+              value={projectCount.toLocaleString()}
+              icon="folder_open"
+              iconColor="text-[#494bd6]"
+              delay="delay-400"
+            />
+          </CardContent>
+        </Card>
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="Extraction Jobs"
+              value={jobsRunning.toLocaleString()}
+              icon="engineering"
+              iconColor="text-[#bcc7de]"
+              subtitle={
+                jobsFailed > 0
+                  ? `${jobsFailed} failed`
+                  : `${jobStats?.total || 0} total`
+              }
+              subtitleColor={jobsFailed > 0 ? "text-[#ffb4ab]" : undefined}
+              delay="delay-500"
+            />
+          </CardContent>
+        </Card>
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg hover:translate-y-[-2px] transition-all duration-300">
+          <CardContent className="p-4">
+            <StatCard
+              title="System Health"
+              value={health?.status === "ok" ? "Healthy" : "Check"}
+              icon="monitor_heart"
+              iconColor={health?.status === "ok" ? "text-[#4ade80]" : "text-[#ffb4ab]"}
+              subtitle={health?.version ? `v${health.version}` : "All systems nominal"}
+              delay="delay-600"
+            />
+          </CardContent>
+        </Card>
       </section>
 
       {/* Bottom Row */}
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-2">
         {/* Activity Feed */}
-        <div className="xl:col-span-2 bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg flex flex-col overflow-hidden h-[600px] fade-in-up delay-700">
+        <Card className="xl:col-span-2 bg-[#1f1f27] border border-[#464554] rounded-lg flex flex-col overflow-hidden h-[600px] fade-in-up delay-700 gap-0 p-0">
           <div className="p-4 border-b border-[rgba(51,65,85,0.5)] flex justify-between items-center bg-[#292932]">
             <div className="text-[18px] font-semibold flex items-center gap-2">
               <span className="material-symbols-outlined">history</span>
@@ -216,9 +245,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {activity.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-[#908fa0]">
-                No recent activity
-              </div>
+              <EmptyState title="No recent activity" message="System events will appear here once data is ingested." icon="notifications" />
             ) : (
               activity.map((item, i) => {
                 const ev =
@@ -272,10 +299,10 @@ export default function DashboardPage() {
               })
             )}
           </div>
-        </div>
+        </Card>
 
         {/* Memories by Type Donut */}
-        <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg flex flex-col overflow-hidden h-[600px] fade-in-up delay-800">
+        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg flex flex-col overflow-hidden h-[600px] fade-in-up delay-800 gap-0 p-0">
           <div className="p-4 border-b border-[rgba(51,65,85,0.5)] flex justify-between items-center bg-[#292932]">
             <div className="text-[18px] font-semibold flex items-center gap-2">
               <span className="material-symbols-outlined">donut_large</span>
@@ -313,10 +340,10 @@ export default function DashboardPage() {
                 </div>
               </>
             ) : (
-              <div className="text-[#908fa0]">No data yet</div>
+              <EmptyState title="No data yet" message="Memories will appear once data is ingested." icon="donut_large" />
             )}
           </div>
-        </div>
+        </Card>
       </section>
     </div>
   );
