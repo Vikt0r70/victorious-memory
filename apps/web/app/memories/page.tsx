@@ -1,7 +1,26 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  flexRender,
+  type ColumnDef,
+} from "@tanstack/react-table";
 import { memoriesApi } from "@/lib/api";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ErrorBanner from "@/components/ui/ErrorBanner";
+import EmptyState from "@/components/ui/EmptyState";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableCell,
+  TableHead,
+} from "@/components/ui/table";
 import MemoryDetailModal from "@/components/modals/MemoryDetailModal";
 import EditMemoryModal from "@/components/modals/EditMemoryModal";
 
@@ -35,6 +54,7 @@ export default function MemoriesPage() {
   const [page, setPage] = useState(1);
   const [perPage] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     status: "",
@@ -53,9 +73,11 @@ export default function MemoriesPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [detailMemoryId, setDetailMemoryId] = useState<string | null>(null);
   const [editMemory, setEditMemory] = useState<any | null>(null);
+  const [sorting, setSorting] = useState([{ id: "created_at", desc: true }]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       if (semanticMode && searchQuery.trim()) {
         const data = await memoriesApi.search(searchQuery, filters.project_id || undefined);
@@ -80,15 +102,14 @@ export default function MemoriesPage() {
         setMemories(data.items || []);
         setTotal(data.total || 0);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e.message || "Failed to load memories");
     } finally {
       setLoading(false);
     }
   }, [page, perPage, filters, semanticMode, searchQuery]);
 
   useEffect(() => {
-    // Load projects for filter dropdown
     fetch("/api/projects")
       .then((r) => r.json())
       .then((data) => setProjects(data.items || []))
@@ -117,9 +138,14 @@ export default function MemoriesPage() {
 
   const bulkAction = async (action: string) => {
     if (selected.size === 0) return;
-    await memoriesApi.bulk(action, Array.from(selected));
-    setSelected(new Set());
-    load();
+    setError(null);
+    try {
+      await memoriesApi.bulk(action, Array.from(selected));
+      setSelected(new Set());
+      load();
+    } catch (e: any) {
+      setError(e.message || `Failed to ${action} memories`);
+    }
   };
 
   const activeFilterCount = Object.values(filters).filter((v) => !!v).length + (searchQuery ? 1 : 0);
@@ -133,6 +159,120 @@ export default function MemoriesPage() {
     setSearchQuery("");
     setSemanticMode(false);
   };
+
+  const columns = useMemo<ColumnDef<any>[]>(() => [
+    {
+      id: "select",
+      header: () => (
+        <input
+          type="checkbox"
+          checked={memories.length > 0 && selected.size === memories.length}
+          onChange={toggleAll}
+          className="accent-[#c0c1ff]"
+        />
+      ),
+      cell: ({ row }: { row: any }) => (
+        <input
+          type="checkbox"
+          checked={selected.has(row.original.id)}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => toggleSelect(row.original.id)}
+          className="accent-[#c0c1ff]"
+        />
+      ),
+      enableSorting: false,
+    },
+    {
+      accessorKey: "content",
+      header: "Content",
+      cell: ({ row }: { row: any }) => (
+        <div className="text-[14px] text-[#e4e1ed] truncate max-w-md">
+          {row.original.content}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "memory_type",
+      header: "Type",
+      cell: ({ row }: { row: any }) => (
+        <span className={`badge border ${TYPE_COLORS[row.original.memory_type] || TYPE_COLORS.context}`}>
+          {row.original.memory_type}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "scope",
+      header: "Scope",
+      cell: ({ row }: { row: any }) => (
+        <span className="badge bg-[#34343d] border border-[#464554] text-[#c7c4d7]">
+          {row.original.scope}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "confidence_score",
+      header: "Confidence",
+      cell: ({ row }: { row: any }) => {
+        const score = row.original.confidence_score || 0;
+        return (
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[13px]">{(score).toFixed(2)}</span>
+            <div className="w-16 h-1.5 bg-[#0d0d15] rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${score * 100}%`,
+                  backgroundColor:
+                    score > 0.8
+                      ? "#4ade80"
+                      : score > 0.5
+                      ? "#d97721"
+                      : "#ffb4ab",
+                }}
+              />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "tags",
+      header: "Tags",
+      cell: ({ row }: { row: any }) => (
+        <div className="flex gap-1 flex-wrap">
+          {(row.original.tags || []).slice(0, 2).map((tag: string) => (
+            <span key={tag} className="badge bg-[#292932] border border-[#464554] text-[#c7c4d7]">
+              {tag}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }: { row: any }) => (
+        <div className="text-[13px] text-[#c7c4d7] font-mono">
+          {timeAgo(row.original.created_at)}
+        </div>
+      ),
+    },
+  ], [memories, selected]);
+
+  const table = useReactTable({
+    data: memories,
+    columns,
+    state: {
+      sorting,
+    },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    initialState: {
+      pagination: { pageSize: 50 },
+    },
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -149,7 +289,7 @@ export default function MemoriesPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={clearFilters}
-            className="flex items-center gap-2 px-3 py-2 border border-[#464554] rounded-sm text-[14px] text-[#c7c4d7] hover:bg-[#292932] transition-colors"
+            className="cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#464554] rounded-sm text-[14px] text-[#c7c4d7] hover:bg-[#292932] transition-colors"
           >
             <span className="material-symbols-outlined text-[18px]">filter_list</span>
             Filters{activeFilterCount > 0 ? ` (${activeFilterCount} Active)` : ""}
@@ -171,7 +311,7 @@ export default function MemoriesPage() {
         </div>
         <button
           onClick={() => setSemanticMode((v) => !v)}
-          className={`flex items-center gap-1 px-3 py-2 border rounded-sm text-[13px] transition-colors ${
+          className={`cursor-pointer flex items-center gap-1 px-3 py-2 border rounded-sm text-[13px] transition-colors ${
             semanticMode ? "border-[#c0c1ff] bg-[#c0c1ff]/10 text-[#c0c1ff]" : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"
           }`}
         >
@@ -230,8 +370,8 @@ export default function MemoriesPage() {
           onChange={(e) => setFilters((f) => ({ ...f, confidence_label: e.target.value }))}
         >
           <option value="">All Confidence</option>
-          <option value="high">High (≥0.85)</option>
-          <option value="medium">Medium (≥0.6)</option>
+          <option value="high">High (&ge;0.85)</option>
+          <option value="medium">Medium (&ge;0.6)</option>
           <option value="low">Low (&lt;0.6)</option>
         </select>
         <input
@@ -269,27 +409,29 @@ export default function MemoriesPage() {
           <div className="h-4 w-px bg-[#464554]" />
           <button
             onClick={() => bulkAction("approve")}
-            className="flex items-center gap-1 text-[14px] text-[#4ade80] hover:text-[#22c55e] transition-colors"
+            className="cursor-pointer flex items-center gap-1 text-[14px] text-[#4ade80] hover:text-[#22c55e] transition-colors"
           >
             <span className="material-symbols-outlined text-[16px]">check_circle</span>
             Approve
           </button>
           <button
             onClick={() => bulkAction("reject")}
-            className="flex items-center gap-1 text-[14px] text-[#ffb4ab] hover:text-[#ff8a80] transition-colors"
+            className="cursor-pointer flex items-center gap-1 text-[14px] text-[#ffb4ab] hover:text-[#ff8a80] transition-colors"
           >
             <span className="material-symbols-outlined text-[16px]">block</span>
             Reject
           </button>
           <button
             onClick={() => bulkAction("delete")}
-            className="flex items-center gap-1 text-[14px] text-[#908fa0] hover:text-[#ffb4ab] transition-colors"
+            className="cursor-pointer flex items-center gap-1 text-[14px] text-[#908fa0] hover:text-[#ffb4ab] transition-colors"
           >
             <span className="material-symbols-outlined text-[16px]">delete</span>
             Delete
           </button>
         </div>
       )}
+
+      {error && <ErrorBanner message={error} />}
 
       {/* Table */}
       <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg overflow-hidden">
@@ -302,116 +444,61 @@ export default function MemoriesPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="ml-3 p-1 hover:bg-[#292932] rounded transition-colors disabled:opacity-30"
+            className="cursor-pointer ml-3 p-1 hover:bg-[#292932] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[18px]">chevron_left</span>
           </button>
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={page * perPage >= total}
-            className="p-1 hover:bg-[#292932] rounded transition-colors disabled:opacity-30"
+            className="cursor-pointer p-1 hover:bg-[#292932] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[18px]">chevron_right</span>
           </button>
         </div>
 
-        {/* Header */}
-        <div className="grid grid-cols-[40px_1fr_120px_100px_150px_150px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.5)] text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              checked={selected.size === memories.length && memories.length > 0}
-              onChange={toggleAll}
-              className="accent-[#c0c1ff]"
-            />
-          </div>
-          <div>Content</div>
-          <div>Type</div>
-          <div>Scope</div>
-          <div>Confidence</div>
-          <div>Tags</div>
-          <div>Created</div>
-        </div>
-
-        {/* Rows */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <span className="material-symbols-outlined animate-spin text-3xl text-[#c0c1ff]">
-              progress_activity
-            </span>
+            <LoadingSpinner />
           </div>
         ) : memories.length === 0 ? (
-          <div className="text-center py-20 text-[#908fa0]">
-            No memories found
-          </div>
+          <EmptyState title="No memories found" message="Try adjusting your filters." icon="search_off" />
         ) : (
-          memories.map((m) => (
-            <div
-              key={m.id}
-              onClick={() => setDetailMemoryId(m.id)}
-              className={`grid grid-cols-[40px_1fr_120px_100px_150px_150px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-[#334155]/20 transition-colors cursor-pointer ${
-                selected.has(m.id) ? "bg-[#c0c1ff]/5" : ""
-              }`}
-            >
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={selected.has(m.id)}
-                  onChange={() => toggleSelect(m.id)}
-                  className="accent-[#c0c1ff]"
-                />
-              </div>
-              <div className="text-[14px] text-[#e4e1ed] truncate">
-                {m.content}
-              </div>
-              <div>
-                <span
-                  className={`badge border ${
-                    TYPE_COLORS[m.memory_type] || TYPE_COLORS.context
-                  }`}
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      onClick={header.column.getToggleSortingHandler()}
+                      className={header.column.getCanSort() ? "cursor-pointer hover:text-[#e4e1ed]" : ""}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getIsSorted() ? (
+                        header.column.getIsSorted() === "asc" ? " ↑" : " ↓"
+                      ) : null}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  onClick={() => setDetailMemoryId(row.original.id)}
+                  className="cursor-pointer hover:bg-[#334155]/20"
                 >
-                  {m.memory_type}
-                </span>
-              </div>
-              <div>
-                <span className="badge bg-[#34343d] border border-[#464554] text-[#c7c4d7]">
-                  {m.scope}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[13px]">
-                  {(m.confidence_score || 0).toFixed(2)}
-                </span>
-                <div className="w-16 h-1.5 bg-[#0d0d15] rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${(m.confidence_score || 0) * 100}%`,
-                      backgroundColor:
-                        m.confidence_score > 0.8
-                          ? "#4ade80"
-                          : m.confidence_score > 0.5
-                          ? "#d97721"
-                          : "#ffb4ab",
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="flex gap-1 flex-wrap">
-                {(m.tags || []).slice(0, 2).map((tag: string) => (
-                  <span
-                    key={tag}
-                    className="badge bg-[#292932] border border-[#464554] text-[#c7c4d7]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="text-[13px] text-[#c7c4d7] font-mono">
-                {timeAgo(m.created_at)}
-              </div>
-            </div>
-          ))
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </div>
 
@@ -444,4 +531,3 @@ export default function MemoriesPage() {
     </div>
   );
 }
-
