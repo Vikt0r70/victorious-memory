@@ -81,7 +81,7 @@ export default function TopBar() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-[#c0c1ff] hover:bg-[#e1e0ff] text-[#1000a9] font-semibold py-2 px-4 rounded-sm transition-colors duration-300 flex items-center gap-2 text-[14px]"
+            className="bg-[#c0c1ff] hover:bg-[#e1e0ff] text-[#1000a9] font-semibold py-2 px-4 rounded-sm transition-colors duration-300 flex items-center gap-2 text-[14px] cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
             Create Memory
@@ -89,7 +89,7 @@ export default function TopBar() {
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifications((v) => !v)}
-              className="text-[#c7c4d7] hover:text-[#e4e1ed] hover:bg-[#292932] rounded-full p-2 transition-colors duration-300 relative"
+              className="text-[#c7c4d7] hover:text-[#e4e1ed] hover:bg-[#292932] rounded-full p-2 transition-colors duration-300 relative cursor-pointer"
             >
               <span className="material-symbols-outlined">notifications</span>
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ffb4ab] rounded-full border border-[#13131b]" />

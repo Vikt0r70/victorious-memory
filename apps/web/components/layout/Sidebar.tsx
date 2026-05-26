@@ -58,7 +58,7 @@ export default function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-4 py-2 transition-colors duration-200 rounded-r-sm border-l-4 ${
+            className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors duration-200 rounded-r-sm border-l-4 ${
               isActive(item.href)
                 ? "border-[#c0c1ff] bg-[#3e495d]/30 text-[#aeb9d0]"
                 : "border-transparent text-[#c7c4d7] hover:bg-[#292932] hover:text-[#e4e1ed]"
@@ -87,7 +87,7 @@ export default function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-4 py-2 transition-colors duration-200 rounded-r-sm border-l-4 ${
+            className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors duration-200 rounded-r-sm border-l-4 ${
               isActive(item.href)
                 ? "border-[#c0c1ff] bg-[#3e495d]/30 text-[#aeb9d0]"
                 : "border-transparent text-[#c7c4d7] hover:bg-[#292932] hover:text-[#e4e1ed]"
