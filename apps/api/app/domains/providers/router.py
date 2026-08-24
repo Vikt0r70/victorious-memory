@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,7 @@ from app.domains.providers.gateway import (
     ProviderAuthenticationError,
     ProviderError,
     ProviderTimeoutError,
+    format_litellm_model,
     gateway,
 )
 from app.domains.providers.schemas import (
@@ -30,6 +32,8 @@ from app.domains.providers.schemas import (
     ProviderCreate,
     ProviderResponse,
     ProviderTestResponse,
+    TemplateItemResponse,
+    TransientTestRequest,
     UsageLogResponse,
 )
 from app.domains.providers.service import (
@@ -42,18 +46,105 @@ from app.domains.providers.service import (
     update_agent_settings as update_agent_settings_svc,
     update_provider as update_provider_svc,
 )
+from app.domains.providers.templates import list_templates
 
 # ---------------------------------------------------------------------------
 # Sub-routers
 # ---------------------------------------------------------------------------
 
 providers_router = APIRouter(prefix="/providers", tags=["providers"])
+router = providers_router  # Alias for backward compatibility with main.py
 agents_router = APIRouter(prefix="/agents", tags=["agents"])
 usage_router = APIRouter(prefix="/usage", tags=["usage"])
 
 # ---------------------------------------------------------------------------
 # Provider registry endpoints
 # ---------------------------------------------------------------------------
+
+
+@providers_router.get("/templates", response_model=list[TemplateItemResponse])
+async def get_provider_templates() -> list[dict[str, Any]]:
+    """Return pre-configured provider templates."""
+    return list_templates()
+
+
+@providers_router.post("/test-connection", response_model=ProviderTestResponse)
+async def test_connection_transient(
+    body: TransientTestRequest,
+) -> ProviderTestResponse:
+    """Test a provider configuration before saving to database."""
+    start = time.perf_counter()
+    api_key = body.api_key.strip() if body.api_key else ""
+    base_url = body.base_url.rstrip("/") if body.base_url else ""
+
+    # 1. Try probing /v1/models if base_url is present
+    if base_url:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                headers: dict[str, str] = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                probe_url = f"{base_url}/models" if base_url.endswith("/v1") else f"{base_url}/v1/models"
+                probe = await client.get(probe_url, headers=headers)
+                latency_ms = int((time.perf_counter() - start) * 1000)
+                if probe.status_code == 200:
+                    return ProviderTestResponse(
+                        status="success",
+                        response="Connected & verified (/models endpoint reached)",
+                        latency_ms=latency_ms,
+                    )
+                if probe.status_code == 401:
+                    return ProviderTestResponse(
+                        status="error",
+                        error="Authentication failed: Invalid API key (401)",
+                        latency_ms=latency_ms,
+                    )
+        except Exception:
+            pass  # Fall through to minimal completion test
+
+    # 2. Minimal acompletion test with LiteLLM
+    try:
+        import litellm
+
+        model_str = format_litellm_model(body.provider_type, body.model)
+        start2 = time.perf_counter()
+        await litellm.acompletion(
+            model=model_str,
+            messages=[{"role": "user", "content": "ping"}],
+            api_key=api_key if api_key else None,
+            api_base=base_url if base_url else None,
+            max_tokens=1,
+            num_retries=0,
+            timeout=12,
+        )
+        latency_ms = int((time.perf_counter() - start2) * 1000)
+        return ProviderTestResponse(
+            status="success",
+            response="Connected & verified (Test completion successful)",
+            latency_ms=latency_ms,
+        )
+    except AuthenticationError as exc:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return ProviderTestResponse(
+            status="error",
+            error=f"Authentication failed: {exc}",
+            latency_ms=latency_ms,
+        )
+    except (Timeout, APIConnectionError) as exc:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return ProviderTestResponse(
+            status="error",
+            error=f"Connection timeout or unreachable host: {exc}",
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return ProviderTestResponse(
+            status="error",
+            error=f"Connection failed: {exc}",
+            latency_ms=latency_ms,
+        )
 
 
 @providers_router.get("", response_model=list[ProviderResponse])
@@ -121,56 +212,48 @@ async def test_provider(
         if provider.api_key_encrypted
         else ""
     )
+    base_url = provider.base_url.rstrip("/") if provider.base_url else ""
 
     # ---- Probe: GET {base_url}/v1/models ---------------------------------
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            headers: dict[str, str] = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            probe = await client.get(
-                f"{provider.base_url.rstrip('/')}/v1/models",
-                headers=headers,
-            )
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            if probe.status_code == 200:
-                return ProviderTestResponse(
-                    status="success",
-                    response="Probe successful",
-                    latency_ms=latency_ms,
-                )
-            if probe.status_code == 401:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid API key",
-                )
-    except httpx.TimeoutException:
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        raise HTTPException(status_code=504, detail="Connection timeout") from None
-    except httpx.ConnectError:
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        raise HTTPException(status_code=502, detail="Connection error") from None
-    except HTTPException:
-        raise
-    except Exception:
-        pass  # Fall through to completion test
+    if base_url:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers: dict[str, str] = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                probe_url = f"{base_url}/models" if base_url.endswith("/v1") else f"{base_url}/v1/models"
+                probe = await client.get(probe_url, headers=headers)
+                latency_ms = int((time.perf_counter() - start) * 1000)
+                if probe.status_code == 200:
+                    return ProviderTestResponse(
+                        status="success",
+                        response="Probe successful",
+                        latency_ms=latency_ms,
+                    )
+                if probe.status_code == 401:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Invalid API key",
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Fall through to completion test
 
     # ---- Fallback: minimal acompletion ------------------------------------
     try:
         import litellm
 
-        model_str = f"{provider.provider_type}/{provider.model}"
-        api_base = provider.base_url if provider.base_url else None
-
+        model_str = format_litellm_model(provider.provider_type, provider.model)
         start2 = time.perf_counter()
         await litellm.acompletion(
             model=model_str,
             messages=[{"role": "user", "content": "hi"}],
-            api_key=api_key,
-            api_base=api_base,
+            api_key=api_key if api_key else None,
+            api_base=base_url if base_url else None,
             max_tokens=1,
             num_retries=0,
-            timeout=10,
+            timeout=12,
         )
         latency_ms = int((time.perf_counter() - start2) * 1000)
         return ProviderTestResponse(
@@ -183,7 +266,7 @@ async def test_provider(
     except (Timeout, APIConnectionError) as exc:
         raise HTTPException(status_code=504, detail="Connection timeout") from exc
     except (APIError, ServiceUnavailableError) as exc:
-        raise HTTPException(status_code=502, detail="Provider error") from exc
+        raise HTTPException(status_code=502, detail=f"Provider error: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Provider error: {exc}") from exc
 
@@ -193,11 +276,7 @@ async def discover_models(
     provider_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> ModelDiscoveryResponse:
-    """Discover available models for a provider.
-
-    1. Try the provider's /v1/models endpoint.
-    2. Fall back to litellm's model list filtered by provider type.
-    """
+    """Discover available models for a provider."""
     provider = await get_provider_svc(db, provider_id)
     if provider is None:
         raise HTTPException(
@@ -211,37 +290,41 @@ async def discover_models(
             if provider.api_key_encrypted
             else ""
         )
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            headers: dict[str, str] = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            resp = await client.get(
-                f"{provider.base_url.rstrip('/')}/v1/models",
-                headers=headers,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                models = [
-                    {"id": m.get("id", ""), "name": m.get("id", "")}
-                    for m in data.get("data", [])
-                ]
-                return ModelDiscoveryResponse(models=models)
+        base_url = provider.base_url.rstrip("/") if provider.base_url else ""
+        if base_url:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers: dict[str, str] = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                probe_url = f"{base_url}/models" if base_url.endswith("/v1") else f"{base_url}/v1/models"
+                resp = await client.get(probe_url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_models = data.get("data", [])
+                    models = []
+                    for m in raw_models:
+                        mid = m.get("id") if isinstance(m, dict) else str(m)
+                        if mid:
+                            models.append({"id": mid, "name": mid})
+                    if models:
+                        return ModelDiscoveryResponse(models=models)
     except Exception:
         pass
 
-    # 2. Fallback to litellm
+    # 2. Fall back to LiteLLM known models
     try:
-        from litellm.utils import get_valid_models
+        import litellm
 
-        all_models = get_valid_models()
-        prefix = provider.provider_type
-        filtered = [m for m in all_models if m.startswith(prefix)]
-        models = [{"id": m, "name": m} for m in filtered]
-        return ModelDiscoveryResponse(models=models)
+        all_models = getattr(litellm, "models_by_provider", {})
+        provider_type = provider.provider_type
+        if provider_type in all_models:
+            models = [{"id": m, "name": m} for m in all_models[provider_type]]
+            return ModelDiscoveryResponse(models=models)
     except Exception:
         pass
 
-    return ModelDiscoveryResponse(models=[])
+    # 3. Fall back to the provider's currently configured model
+    return ModelDiscoveryResponse(models=[{"id": provider.model, "name": provider.model}])
 
 
 # ---------------------------------------------------------------------------
@@ -253,47 +336,51 @@ async def discover_models(
 async def list_agents(
     db: AsyncSession = Depends(get_db),
 ) -> list[AgentSettingsResponse]:
-    """Return all configured agents."""
+    """Return settings for every configured agent role."""
     agents = await list_agents_svc(db)
     return agents
 
 
 @agents_router.put("/{role}", response_model=AgentSettingsResponse)
-async def update_agent_settings(
+async def update_agent(
     role: str,
     body: AgentSettings,
     db: AsyncSession = Depends(get_db),
 ) -> AgentSettingsResponse:
-    """Update an agent's provider fallback chain and settings overrides."""
-    try:
-        agent = await update_agent_settings_svc(db, role, body)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+    """Update settings for a specific agent role."""
+    agent = await update_agent_settings_svc(db, role, body)
     if agent is None:
-        raise HTTPException(
-            status_code=404, detail=f"Agent role '{role}' not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Agent role '{role}' not found")
     return agent
 
 
 @agents_router.post("/{role}/test", response_model=ProviderTestResponse)
-async def test_agent_provider(role: str) -> ProviderTestResponse:
-    """Test an agent's primary provider via the gateway."""
+async def test_agent(
+    role: str,
+    db: AsyncSession = Depends(get_db),
+) -> ProviderTestResponse:
+    """Send a test completion through the agent's configured fallback chain."""
+    start = time.perf_counter()
     try:
-        reply = await gateway.complete(
-            messages=[{"role": "user", "content": "Say hello in one word"}],
+        response = await gateway.complete(
+            messages=[{"role": "user", "content": "Reply with 'ok'"}],
             model_role=role,
             response_format="text",
-            max_tokens=20,
+            max_tokens=10,
         )
-        return ProviderTestResponse(status="success", response=reply.strip())
-    except ProviderTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
-    except ProviderAuthenticationError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return ProviderTestResponse(
+            status="success",
+            response=response,
+            latency_ms=latency_ms,
+        )
     except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return ProviderTestResponse(
+            status="error",
+            error=str(exc),
+            latency_ms=latency_ms,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -302,24 +389,14 @@ async def test_agent_provider(role: str) -> ProviderTestResponse:
 
 
 @usage_router.get("", response_model=list[UsageLogResponse])
-async def list_usage_logs(
+async def get_usage_logs(
     agent_role: str | None = Query(None),
     provider_id: str | None = Query(None),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ) -> list[UsageLogResponse]:
-    """Return usage logs, optionally filtered by agent role and/or provider."""
+    """Return recent LLM usage logs with provider names attached."""
     logs = await list_usage_logs_svc(
         db, agent_role=agent_role, provider_id=provider_id, limit=limit
     )
     return logs
-
-
-# ---------------------------------------------------------------------------
-# Aggregate router exported to main.py
-# ---------------------------------------------------------------------------
-
-router = APIRouter()
-router.include_router(providers_router)
-router.include_router(agents_router)
-router.include_router(usage_router)

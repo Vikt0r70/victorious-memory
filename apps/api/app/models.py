@@ -232,6 +232,9 @@ class Exchange(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    extracted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     project: Mapped[Project | None] = relationship(back_populates="exchanges")
@@ -256,6 +259,9 @@ class ExtractionJob(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     exchange_id: Mapped[str] = mapped_column(
         Text, ForeignKey("exchanges.id"), nullable=False
+    )
+    exchange_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default="{}", default=list
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)

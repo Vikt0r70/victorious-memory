@@ -1,17 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
-import { activityApi } from "@/lib/api";
+import { activityApi, projectsApi } from "@/lib/api";
 
 const EVENT_ICONS: Record<string, { icon: string; color: string }> = {
-  memory_created: { icon: "add_circle", color: "bg-[#c0c1ff]/20 text-[#c0c1ff]" },
-  memory_approved: { icon: "verified", color: "bg-[#22c55e]/20 text-[#22c55e]" },
-  memory_rejected: { icon: "block", color: "bg-[#ffb4ab]/20 text-[#ffb4ab]" },
-  extraction_started: { icon: "play_circle", color: "bg-[#3b82f6]/20 text-[#3b82f6]" },
-  extraction_completed: { icon: "check_circle", color: "bg-[#22c55e]/20 text-[#22c55e]" },
-  extraction_failed: { icon: "error", color: "bg-[#d97721]/20 text-[#d97721]" },
-  memory_updated: { icon: "edit_note", color: "bg-[#bcc7de]/20 text-[#bcc7de]" },
-  memory_deleted: { icon: "delete", color: "bg-[#908fa0]/20 text-[#908fa0]" },
-  edge_created: { icon: "link", color: "bg-[#a855f7]/20 text-[#a855f7]" },
+  memory_created: { icon: "add_circle", color: "bg-primary/20 text-primary" },
+  memory_approved: { icon: "verified", color: "bg-success/20 text-success" },
+  memory_rejected: { icon: "block", color: "bg-destructive/20 text-destructive" },
+  extraction_started: { icon: "play_circle", color: "bg-info/20 text-info" },
+  extraction_completed: { icon: "check_circle", color: "bg-success/20 text-success" },
+  extraction_failed: { icon: "error", color: "bg-info/20 text-info" },
+  memory_updated: { icon: "edit_note", color: "bg-secondary/20 text-secondary-foreground" },
+  memory_deleted: { icon: "delete", color: "bg-muted-foreground/20 text-muted-foreground" },
+  edge_created: { icon: "link", color: "bg-accent/20 text-accent-foreground" },
 };
 
 function timeAgo(d: string) {
@@ -56,8 +56,7 @@ export default function ActivityPage() {
 
   useEffect(() => {
     // Load projects for filter dropdown
-    fetch("/api/projects")
-      .then((r) => r.json())
+    projectsApi.list()
       .then((data) => setProjects(data.items || []))
       .catch(() => setProjects([]));
   }, []);
@@ -72,13 +71,13 @@ export default function ActivityPage() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">Activity Feed</h1>
-        <p className="text-[#c7c4d7] text-[14px] mt-1">Real-time system events and actions</p>
+        <p className="text-muted-foreground text-[14px] mt-1">Real-time system events and actions</p>
       </div>
 
       {/* Filters */}
       <div className="flex gap-3 items-center flex-wrap">
         <select
-          className="bg-[#0d0d15] border border-[#464554] rounded-sm px-3 py-2 text-[13px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
+          className="bg-background border border-input rounded-md shadow-sm px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
           value={eventType}
           onChange={(e) => setEventType(e.target.value)}
         >
@@ -88,7 +87,7 @@ export default function ActivityPage() {
           ))}
         </select>
         <select
-          className="bg-[#0d0d15] border border-[#464554] rounded-sm px-3 py-2 text-[13px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
+          className="bg-background border border-input rounded-md shadow-sm px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
         >
@@ -98,7 +97,7 @@ export default function ActivityPage() {
           ))}
         </select>
         <select
-          className="bg-[#0d0d15] border border-[#464554] rounded-sm px-3 py-2 text-[13px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
+          className="bg-background border border-input rounded-md shadow-sm px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
           value={dateRange}
           onChange={(e) => setDateRange(e.target.value)}
         >
@@ -110,51 +109,51 @@ export default function ActivityPage() {
         <button
           onClick={() => setAutoRefresh((v) => !v)}
           className={`flex items-center gap-1.5 px-3 py-2 border rounded-sm text-[13px] transition-colors ${
-            autoRefresh ? "border-[#4ade80] text-[#4ade80] bg-[#4ade80]/10" : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"
+            autoRefresh ? "border-[#4ade80] text-success bg-success/10" : "border-input text-muted-foreground hover:bg-accent"
           }`}
         >
           {autoRefresh && <span className="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse" />}
           <span className="material-symbols-outlined text-[16px]">{autoRefresh ? "sync" : "sync_disabled"}</span>
           Auto-refresh
         </button>
-        <button onClick={load} className="flex items-center gap-1 px-3 py-2 border border-[#464554] rounded-sm text-[13px] text-[#c7c4d7] hover:bg-[#292932]">
+        <button onClick={load} className="flex items-center gap-1 px-3 py-2 border border-input rounded-md shadow-sm text-[13px] text-muted-foreground hover:bg-accent">
           <span className="material-symbols-outlined text-[16px]">refresh</span>Refresh
         </button>
       </div>
 
       {/* Feed */}
-      <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg overflow-hidden">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-16">
-            <span className="material-symbols-outlined animate-spin text-3xl text-[#c0c1ff]">progress_activity</span>
+            <span className="material-symbols-outlined animate-spin text-3xl text-primary">progress_activity</span>
           </div>
         ) : items.length === 0 ? (
-          <div className="text-center py-16 text-[#908fa0]">No activity found</div>
+          <div className="text-center py-16 text-muted-foreground">No activity found</div>
         ) : (
           items.map((item) => {
-            const ev = EVENT_ICONS[item.event_type] || { icon: "info", color: "bg-[#908fa0]/20 text-[#908fa0]" };
+            const ev = EVENT_ICONS[item.event_type] || { icon: "info", color: "bg-muted-foreground/20 text-muted-foreground" };
             const isFailed = item.event_type.includes("failed");
             return (
-              <div key={item.id} className={`group flex items-start gap-4 p-4 border-b border-[rgba(51,65,85,0.5)] hover:bg-[#334155]/40 hover:translate-x-1 transition-colors transition-transform duration-300 cursor-pointer ${isFailed ? "border-l-2 border-l-[#d97721]" : ""}`}>
+              <div key={item.id} className={`group flex items-start gap-4 p-4 border-b border-border hover:bg-muted hover:translate-x-1 transition-colors transition-transform duration-300 cursor-pointer ${isFailed ? "border-l-2 border-l-[#d97721]" : ""}`}>
                 <div className={`w-10 h-10 rounded-full ${ev.color} flex items-center justify-center shrink-0 mt-0.5`}>
                   <span className="material-symbols-outlined text-[20px]">{ev.icon}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-medium text-[#e4e1ed]">
+                      <span className="text-[14px] font-medium text-foreground">
                         {item.event_type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
                       </span>
                       {item.memory_id && (
-                        <span className="badge bg-[#292932] border border-[#464554] text-[#c7c4d7]">{item.memory_id.slice(0, 12)}</span>
+                        <span className="badge bg-accent border border-border text-muted-foreground">{item.memory_id.slice(0, 12)}</span>
                       )}
                     </div>
-                    <span className="text-xs text-[#c7c4d7] font-mono shrink-0 ml-4">{timeAgo(item.created_at)}</span>
+                    <span className="text-xs text-muted-foreground font-mono shrink-0 ml-4">{timeAgo(item.created_at)}</span>
                   </div>
-                  <div className="text-[13px] text-[#c7c4d7]">{item.description}</div>
+                  <div className="text-[13px] text-muted-foreground">{item.description}</div>
                   {item.project_id && (
                     <div className="mt-1.5">
-                      <span className="badge bg-[#d97721]/10 border border-[#d97721] text-[#d97721]">{item.project_id}</span>
+                      <span className="badge bg-info/10 border border-info text-info">{item.project_id}</span>
                     </div>
                   )}
                 </div>

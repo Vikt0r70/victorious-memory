@@ -16,12 +16,14 @@ class ExtractionError(Exception):
     pass
 
 
-def _format_existing(memories: list[Memory]) -> str:
+def _format_existing(memories: list[Memory], max_items: int = 15) -> str:
     if not memories:
         return "None yet."
     lines = []
-    for m in memories:
-        lines.append(f"- [{m.memory_type}] {m.content[:150]}")
+    for m in memories[:max_items]:
+        lines.append(f"- [{m.memory_type}] {m.content[:120]}")
+    if len(memories) > max_items:
+        lines.append(f"  ... and {len(memories) - max_items} more (omitted for brevity)")
     return "\n".join(lines)
 
 
@@ -42,8 +44,34 @@ def _format_agent_parts(parts: list[dict]) -> str:
     return "\n\n".join(lines) if lines else "(empty)"
 
 
+def _format_conversation(exchanges: list[Exchange]) -> str:
+    """Format single or multi-turn batch exchanges chronologically."""
+    if not exchanges:
+        return "(empty conversation)"
+    if len(exchanges) == 1:
+        exc = exchanges[0]
+        parts = _format_agent_parts(exc.agent_parts or [])
+        return (
+            f"Session: {exc.session_id}\n"
+            f"Time: {exc.created_at}\n\n"
+            f"User: {exc.user_content or '(empty)'}\n\n"
+            f"Agent:\n{parts}"
+        )
+
+    sections = []
+    for idx, exc in enumerate(exchanges, 1):
+        parts = _format_agent_parts(exc.agent_parts or [])
+        user_text = exc.user_content or "(empty)"
+        sections.append(
+            f"--- Turn {idx} (Session: {exc.session_id}, Time: {exc.created_at}) ---\n"
+            f"User: {user_text}\n\n"
+            f"Agent:\n{parts}"
+        )
+    return "\n\n".join(sections)
+
+
 def _build_prompt(
-    exchange: Exchange,
+    exchanges: list[Exchange],
     project: Project | None,
     existing_memories: list[Memory],
     existing_preferences: list[Memory],
@@ -52,7 +80,7 @@ def _build_prompt(
     project_path = project.workspace_path if project else "unknown"
     formatted_existing = _format_existing(existing_memories)
     formatted_prefs = _format_existing(existing_preferences)
-    formatted_parts = _format_agent_parts(exchange.agent_parts or [])
+    formatted_conversation = _format_conversation(exchanges)
 
     return f"""You are a memory extraction agent for "Victorious Memory". Read the conversation and extract DURABLE knowledge worth remembering for future conversations.
 
@@ -95,14 +123,8 @@ Path: {project_path}
 ## User Preferences (already captured)
 {formatted_prefs}
 
-## Conversation
-Session: {exchange.session_id}
-Time: {exchange.created_at}
-
-User: {exchange.user_content or "(empty)"}
-
-Agent:
-{formatted_parts}
+## Conversation Sequence
+{formatted_conversation}
 
 ## Output
 Return a JSON array. Empty array [] if nothing worth remembering.
@@ -148,13 +170,18 @@ def _parse_response(text: str) -> list[dict]:
 
 
 async def extract_memories(
-    exchange: Exchange,
+    exchanges: list[Exchange] | Exchange,
     project: Project | None,
     existing_memories: list[Memory],
     existing_preferences: list[Memory],
 ) -> list[MemoryCandidate]:
-    """Call the LLM to extract memory candidates from a conversation exchange."""
-    prompt = _build_prompt(exchange, project, existing_memories, existing_preferences)
+    """Call the LLM to extract memory candidates from single or multi-turn conversation batch."""
+    exchange_list = [exchanges] if isinstance(exchanges, Exchange) else exchanges
+    prompt = _build_prompt(exchange_list, project, existing_memories, existing_preferences)
+    logger.info(
+        "Extraction call: %d exchanges, prompt ~%d chars",
+        len(exchange_list), len(prompt),
+    )
 
     # First attempt
     try:
@@ -167,9 +194,14 @@ async def extract_memories(
         raise ExtractionError(f"LLM call failed: {exc}") from exc
 
     raw = _parse_response(response)
+    logger.info("Extraction parse: %d raw items from response (%d chars)", len(raw), len(response))
 
     # If empty, try once more with stricter instruction
     if not raw:
+        logger.warning(
+            "Extraction: unparseable or empty LLM response, retrying. Raw (%d chars): %.500s",
+            len(response), response,
+        )
         try:
             response = await gateway.complete(
                 messages=[
@@ -180,12 +212,20 @@ async def extract_memories(
                 response_format="json",
             )
             raw = _parse_response(response)
-        except Exception:
-            pass
+            logger.info("Extraction retry parse: %d raw items from response (%d chars)", len(raw), len(response))
+        except Exception as exc:
+            logger.warning("Extraction retry failed: %s", exc)
 
-    # Convert to MemoryCandidate objects
+    # Convert to MemoryCandidate objects.
+    # Some models return an array of plain strings instead of objects — wrap those.
     candidates = []
+    skipped = 0
     for item in raw:
+        if isinstance(item, str):
+            item = {"content": item}
+        if not isinstance(item, dict):
+            skipped += 1
+            continue
         try:
             candidate = MemoryCandidate(
                 content=item.get("content", ""),
@@ -198,7 +238,14 @@ async def extract_memories(
             )
             if candidate.content and len(candidate.content) >= 10:
                 candidates.append(candidate)
+            else:
+                skipped += 1
         except Exception as exc:
-            logger.warning("Skipping malformed candidate: %s", exc)
+            skipped += 1
+            logger.warning("Skipping malformed candidate: %s (item: %.200s)", exc, item)
 
+    logger.info(
+        "Extraction done: %d/%d items -> %d candidates (%d skipped)",
+        len(candidates), max(len(raw), 1), len(candidates), skipped,
+    )
     return candidates

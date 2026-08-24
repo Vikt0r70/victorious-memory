@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,7 @@ ProviderType = Literal[
 
 
 class ProviderCreate(BaseModel):
-    """Payload for creating a provider configuration."""
+    """Payload for creating or updating a provider configuration."""
 
     name: str
     provider_type: ProviderType
@@ -47,13 +47,24 @@ class ProviderResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TransientTestRequest(BaseModel):
+    """Payload for testing provider connection before saving."""
+
+    name: str = "Test Connection"
+    provider_type: ProviderType
+    base_url: str
+    api_key: str = ""
+    model: str
+    max_tokens: int = 2000
+
+
 class AgentSettings(BaseModel):
     """Agent settings schema."""
 
     role: str
     primary_provider_id: str | None = None
     fallback_provider_ids: list[str] = []
-    settings_override: dict = {}
+    settings_override: dict[str, Any] = {}
 
 
 class AgentSettingsResponse(BaseModel):
@@ -62,7 +73,7 @@ class AgentSettingsResponse(BaseModel):
     role: str
     primary_provider_id: str | None = None
     fallback_provider_ids: list[str] = []
-    settings_override: dict = {}
+    settings_override: dict[str, Any] = {}
 
     model_config = {"from_attributes": True}
 
@@ -81,6 +92,7 @@ class UsageLogResponse(BaseModel):
 
     id: int
     provider_id: str
+    provider_name: str | None = None
     agent_role: str
     model: str
     prompt_tokens: int
@@ -99,3 +111,14 @@ class ModelDiscoveryResponse(BaseModel):
     """Model discovery response schema."""
 
     models: list[dict[str, str]]
+
+
+class TemplateItemResponse(BaseModel):
+    """Provider template response schema."""
+
+    key: str
+    name: str
+    provider_type: str
+    base_url: str
+    default_model: str
+    description: str

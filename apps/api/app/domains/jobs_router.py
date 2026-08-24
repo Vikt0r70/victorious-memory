@@ -101,6 +101,27 @@ async def job_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/{job_id}")
+async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ExtractionJob).where(ExtractionJob.id == job_id))
+    j = result.scalar_one_or_none()
+    if not j:
+        raise HTTPException(404, "Job not found")
+    return {
+        "id": j.id,
+        "exchange_id": j.exchange_id,
+        "exchange_ids": j.exchange_ids,
+        "status": j.status,
+        "attempts": j.attempts,
+        "max_attempts": j.max_attempts,
+        "error": j.error,
+        "retry_after": j.retry_after.isoformat() if j.retry_after else None,
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "started_at": j.started_at.isoformat() if j.started_at else None,
+        "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+    }
+
+
 @router.post("/{job_id}/retry")
 async def retry_job(job_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ExtractionJob).where(ExtractionJob.id == job_id))

@@ -114,19 +114,19 @@ export default function GraphPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">Graph Explorer</h1>
-          <p className="text-[#c7c4d7] text-[14px] mt-1">Visualize memory relationships</p>
+          <p className="text-muted-foreground text-[14px] mt-1">Visualize memory relationships</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[#c7c4d7] text-[18px]">search</span>
+            <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[18px]">search</span>
             <input
-              className="bg-[#0d0d15] border border-[#464554] rounded-sm py-1.5 pl-8 pr-3 text-[13px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff] placeholder-[#908fa0]"
+              className="bg-background border border-input rounded-md shadow-sm py-1.5 pl-8 pr-3 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder-[#908fa0]"
               placeholder="Search nodes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <span className="text-[13px] text-[#908fa0]">
+          <span className="text-[13px] text-muted-foreground">
             {filteredData.nodes.length} nodes · {filteredData.links.length} edges
           </span>
         </div>
@@ -137,14 +137,14 @@ export default function GraphPage() {
         {Object.entries(EDGE_COLORS).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
             <div className="w-3 h-0.5 rounded" style={{ backgroundColor: v }} />
-            <span className="text-[#c7c4d7] capitalize">{k.replace(/_/g, " ")}</span>
+            <span className="text-muted-foreground capitalize">{k.replace(/_/g, " ")}</span>
           </div>
         ))}
       </div>
 
       <div className="flex-1 flex gap-4 min-h-0">
         {/* Graph Canvas */}
-        <div className="flex-1 bg-[#0d0d15] border border-[rgba(51,65,85,0.5)] rounded-lg relative overflow-hidden">
+        <div className="flex-1 bg-background border border-border rounded-lg relative overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <LoadingSpinner />
@@ -169,7 +169,7 @@ export default function GraphPage() {
               }}
               nodeCanvasObjectMode={() => "after"}
               linkColor={(link: any) => EDGE_COLORS[link.data?.relation_type] || "#6b7280"}
-              backgroundColor="#0d0d15"
+              backgroundColor="#09090b"
               onNodeClick={handleNodeClick}
               onNodeHover={handleNodeHover}
               width={undefined}
@@ -179,60 +179,60 @@ export default function GraphPage() {
         </div>
 
         {/* Right Panel */}
-        <div className="w-[320px] bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg overflow-y-auto p-4 space-y-4">
+        <div className="w-[320px] bg-card border border-border rounded-lg overflow-y-auto p-4 space-y-4">
           {selectedNode ? (
             <>
               <div className="flex items-center justify-between">
-                <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Node Details</h3>
-                <button onClick={() => setSelectedNode(null)} className="text-[#c7c4d7] hover:text-[#e4e1ed]">
+                <h3 className="text-[18px] font-semibold text-foreground">Node Details</h3>
+                <button onClick={() => setSelectedNode(null)} className="text-muted-foreground hover:text-foreground">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
               <div>
-                <span className="badge bg-[#c0c1ff]/10 border border-[#c0c1ff] text-[#c0c1ff] text-[11px]">{selectedNode.id?.slice(0, 12)}</span>
+                <span className="badge bg-primary/10 border border-primary text-primary text-[11px]">{selectedNode.id?.slice(0, 12)}</span>
               </div>
-              <p className="text-[14px] text-[#e4e1ed] leading-relaxed">{selectedNode.content}</p>
+              <p className="text-[14px] text-foreground leading-relaxed">{selectedNode.content}</p>
               <div className="flex flex-wrap gap-2">
                 <span className={`badge border ${
                   selectedNode.memory_type === "decision" ? "bg-[#8083ff]/10 border-[#8083ff] text-[#8083ff]" :
-                  selectedNode.memory_type === "bugfix" ? "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]" :
-                  "bg-[#bcc7de]/10 border-[#bcc7de] text-[#bcc7de]"
+                  selectedNode.memory_type === "bugfix" ? "bg-destructive/10 border-[#ffb4ab] text-destructive" :
+                  "bg-secondary/10 border-secondary text-secondary-foreground"
                 }`}>{selectedNode.memory_type}</span>
-                <span className="badge bg-[#34343d] border border-[#464554] text-[#c7c4d7]">{selectedNode.scope}</span>
+                <span className="badge bg-muted border border-border text-muted-foreground">{selectedNode.scope}</span>
                 <span className={`badge border ${
-                  selectedNode.status === "active" ? "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]" :
-                  "bg-[#d97721]/10 border-[#d97721] text-[#d97721]"
+                  selectedNode.status === "active" ? "bg-success/10 border-[#4ade80] text-success" :
+                  "bg-info/10 border-info text-info"
                 }`}>{selectedNode.status}</span>
               </div>
               {selectedNode.confidence_score && (
                 <div>
-                  <div className="text-[11px] font-bold uppercase text-[#908fa0] mb-1">Confidence</div>
+                  <div className="text-[11px] font-bold uppercase text-muted-foreground mb-1">Confidence</div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[14px] text-[#e4e1ed]">{selectedNode.confidence_score?.toFixed(2)}</span>
-                    <div className="flex-1 h-1.5 bg-[#0d0d15] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#c0c1ff] rounded-full" style={{ width: `${(selectedNode.confidence_score || 0) * 100}%` }} />
+                    <span className="font-mono text-[14px] text-foreground">{selectedNode.confidence_score?.toFixed(2)}</span>
+                    <div className="flex-1 h-1.5 bg-background rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${(selectedNode.confidence_score || 0) * 100}%` }} />
                     </div>
                   </div>
                 </div>
               )}
               {selectedNode.tags && selectedNode.tags.length > 0 && (
                 <div>
-                  <div className="text-[11px] font-bold uppercase text-[#908fa0] mb-1">Tags</div>
+                  <div className="text-[11px] font-bold uppercase text-muted-foreground mb-1">Tags</div>
                   <div className="flex flex-wrap gap-1">
                     {selectedNode.tags.map((t: string) => (
-                      <span key={t} className="badge bg-[#292932] border border-[#464554] text-[#c7c4d7] text-[10px]">{t}</span>
+                      <span key={t} className="badge bg-accent border border-border text-muted-foreground text-[10px]">{t}</span>
                     ))}
                   </div>
                 </div>
               )}
               {/* Connected edges */}
               <div>
-                <div className="text-[11px] font-bold uppercase text-[#908fa0] mb-2">Connected Edges</div>
+                <div className="text-[11px] font-bold uppercase text-muted-foreground mb-2">Connected Edges</div>
                 <div className="space-y-2">
                   {activeNodeEdges.map((e) => (
-                    <div key={e.id} className="flex items-center gap-2 text-[12px] bg-[#292932] p-2 rounded-sm cursor-pointer hover:bg-[#334155]/40" onClick={() => setSelectedEdge(e)}>
+                    <div key={e.id} className="flex items-center gap-2 text-[12px] bg-accent p-2 rounded-sm cursor-pointer hover:bg-muted" onClick={() => setSelectedEdge(e)}>
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: EDGE_COLORS[e.relation_type] || "#6b7280" }} />
-                      <span className="text-[#c7c4d7] uppercase font-mono text-[10px]">{e.relation_type}</span>
+                      <span className="text-muted-foreground uppercase font-mono text-[10px]">{e.relation_type}</span>
                     </div>
                   ))}
                 </div>
@@ -241,8 +241,8 @@ export default function GraphPage() {
           ) : selectedEdge ? (
             <>
               <div className="flex items-center justify-between">
-                <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Edge Details</h3>
-                <button onClick={() => setSelectedEdge(null)} className="text-[#c7c4d7] hover:text-[#e4e1ed]">
+                <h3 className="text-[18px] font-semibold text-foreground">Edge Details</h3>
+                <button onClick={() => setSelectedEdge(null)} className="text-muted-foreground hover:text-foreground">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
@@ -252,40 +252,40 @@ export default function GraphPage() {
                   {selectedEdge.relation_type?.replace("_", " ")}
                 </span>
               </div>
-              <div className="bg-[#0d0d15] border border-[#464554] rounded-sm p-3 space-y-2">
+              <div className="bg-background border border-input rounded-md shadow-sm p-3 space-y-2">
                 <div className="flex justify-between text-[12px]">
-                  <span className="text-[#908fa0]">Source</span>
-                  <span className="font-mono text-[#c7c4d7]">{selectedEdge.source || selectedEdge.source_id}</span>
+                  <span className="text-muted-foreground">Source</span>
+                  <span className="font-mono text-muted-foreground">{selectedEdge.source || selectedEdge.source_id}</span>
                 </div>
                 <div className="flex justify-between text-[12px]">
-                  <span className="text-[#908fa0]">Target</span>
-                  <span className="font-mono text-[#c7c4d7]">{selectedEdge.target || selectedEdge.target_id}</span>
+                  <span className="text-muted-foreground">Target</span>
+                  <span className="font-mono text-muted-foreground">{selectedEdge.target || selectedEdge.target_id}</span>
                 </div>
                 {selectedEdge.description && (
-                  <p className="text-[13px] text-[#e4e1ed]">{selectedEdge.description}</p>
+                  <p className="text-[13px] text-foreground">{selectedEdge.description}</p>
                 )}
                 <div className="flex justify-between text-[12px]">
-                  <span className="text-[#908fa0]">Confidence</span>
-                  <span className="font-mono text-[#c7c4d7]">{(selectedEdge.confidence || 0).toFixed(2)}</span>
+                  <span className="text-muted-foreground">Confidence</span>
+                  <span className="font-mono text-muted-foreground">{(selectedEdge.confidence || 0).toFixed(2)}</span>
                 </div>
               </div>
             </>
           ) : (
             <>
-              <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Filters</h3>
+              <h3 className="text-[18px] font-semibold text-foreground">Filters</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-[#908fa0] block mb-1.5">Depth</label>
+                  <label className="text-[11px] font-bold uppercase text-muted-foreground block mb-1.5">Depth</label>
                   <input
                     type="range" min="1" max="3" step="1"
                     value={depth}
                     onChange={(e) => setDepth(parseInt(e.target.value))}
                     className="w-full"
                   />
-                  <div className="text-[12px] text-[#c7c4d7] text-right">{depth} hop{depth > 1 ? "s" : ""}</div>
+                  <div className="text-[12px] text-muted-foreground text-right">{depth} hop{depth > 1 ? "s" : ""}</div>
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-[#908fa0] block mb-1.5">Memory Types</label>
+                  <label className="text-[11px] font-bold uppercase text-muted-foreground block mb-1.5">Memory Types</label>
                   <div className="flex flex-wrap gap-2">
                     {Object.keys(NODE_COLORS).map((t) => (
                       <button
@@ -293,8 +293,8 @@ export default function GraphPage() {
                         onClick={() => setFilterTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
                         className={`badge text-[10px] border transition-colors cursor-pointer ${
                           filterTypes.includes(t)
-                            ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]"
-                            : "bg-[#292932] border-[#464554] text-[#c7c4d7] hover:bg-[#334155]/40"
+                            ? "bg-primary/20 border-primary text-primary"
+                            : "bg-accent border-border text-muted-foreground hover:bg-muted"
                         }`}
                       >
                         {t}
@@ -303,7 +303,7 @@ export default function GraphPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-[#908fa0] block mb-1.5">Relation Types</label>
+                  <label className="text-[11px] font-bold uppercase text-muted-foreground block mb-1.5">Relation Types</label>
                   <div className="flex flex-wrap gap-2">
                     {Object.keys(EDGE_COLORS).map((t) => (
                       <button
@@ -311,8 +311,8 @@ export default function GraphPage() {
                         onClick={() => setFilterRelations((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
                         className={`badge text-[10px] border transition-colors cursor-pointer ${
                           filterRelations.includes(t)
-                            ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]"
-                            : "bg-[#292932] border-[#464554] text-[#c7c4d7] hover:bg-[#334155]/40"
+                            ? "bg-primary/20 border-primary text-primary"
+                            : "bg-accent border-border text-muted-foreground hover:bg-muted"
                         }`}
                       >
                         {t.replace("_", " ")}
@@ -328,9 +328,9 @@ export default function GraphPage() {
 
       {/* Hover Tooltip */}
       {hoveredNode && (
-        <div className="fixed bottom-4 left-4 bg-[#1e293b] border border-[#464554] rounded-lg p-3 shadow-xl max-w-sm z-50">
-          <div className="text-[11px] font-bold uppercase text-[#908fa0] mb-1">{hoveredNode.memory_type}</div>
-          <p className="text-[13px] text-[#e4e1ed] line-clamp-3">{hoveredNode.content}</p>
+        <div className="fixed bottom-4 left-4 bg-card border border-input rounded-lg p-3 shadow-xl max-w-sm z-50">
+          <div className="text-[11px] font-bold uppercase text-muted-foreground mb-1">{hoveredNode.memory_type}</div>
+          <p className="text-[13px] text-foreground line-clamp-3">{hoveredNode.content}</p>
         </div>
       )}
 

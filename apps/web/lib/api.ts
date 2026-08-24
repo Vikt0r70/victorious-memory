@@ -1,16 +1,28 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
+// Hard ceiling per call — a hung backend shows an error banner, not an eternal spinner
+export const REQUEST_TIMEOUT_MS = 15000;
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  } catch (e: any) {
+    if (e?.name === "TimeoutError" || e?.name === "AbortError") {
+      throw new Error("API request timed out — backend slow or unreachable");
+    }
+    throw new Error("API unreachable — is the backend running?");
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`API ${res.status}: ${body}`);
@@ -83,6 +95,16 @@ export const exchangesApi = {
   get: (id: string) => request<any>(`/exchanges/${id}`),
 };
 
+// ─── Ingest / Buffer ──────────────────────────────────
+export const ingestApi = {
+  bufferStatus: (projectId?: string) =>
+    request<any>(`/ingest/buffer-status${projectId ? `?project_id=${projectId}` : ""}`),
+  extractNow: (projectId?: string) =>
+    request<any>(`/ingest/extract-now${projectId ? `?project_id=${projectId}` : ""}`, {
+      method: "POST",
+    }),
+};
+
 // ─── Graph / Edges ────────────────────────────────────
 export const graphApi = {
   getGraph: (params?: Record<string, string>) =>
@@ -117,6 +139,7 @@ export const settingsApi = {
 // ─── Providers ────────────────────────────────────────
 export const providersApi = {
   list: () => request<any>("/providers"),
+  templates: () => request<any>("/providers/templates"),
   create: (data: any) =>
     request<any>("/providers", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: any) =>
@@ -125,6 +148,11 @@ export const providersApi = {
     request<void>(`/providers/${id}`, { method: "DELETE" }),
   test: (id: string) =>
     request<any>(`/providers/${id}/test`, { method: "POST" }),
+  testConnection: (data: any) =>
+    request<any>("/providers/test-connection", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   listModels: (id: string) => request<any>(`/providers/${id}/models`),
 };
 

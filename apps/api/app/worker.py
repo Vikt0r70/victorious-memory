@@ -1,4 +1,4 @@
-"""Background extraction worker — polls job queue and processes exchanges."""
+"""Background extraction worker — polls job queue and processes conversation batches."""
 
 from __future__ import annotations
 
@@ -23,6 +23,36 @@ from app.domains.projects.service import get_project
 from app.models import Exchange, ExtractionJob
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_exchange_tokens(exc: Exchange) -> int:
+    """Rough token estimate (~4 chars/token) for an exchange's content."""
+    chars = len(exc.user_content or "")
+    for part in exc.agent_parts or []:
+        chars += len(part.get("content", "") if isinstance(part, dict) else "")
+    return chars // 4 + 32
+
+
+def _chunk_exchanges(exchanges: list[Exchange], token_budget: int) -> list[list[Exchange]]:
+    """Split a batch into chunks that each fit within the LLM prompt budget.
+
+    Keeps providers with small TPM limits (e.g., Groq free tier at 8K) viable
+    and avoids timeouts on oversized prompts.
+    """
+    chunks: list[list[Exchange]] = []
+    current: list[Exchange] = []
+    size = 0
+    for exc in exchanges:
+        est = _estimate_exchange_tokens(exc)
+        # A single oversized exchange still gets its own chunk (never dropped)
+        if current and size + est > token_budget:
+            chunks.append(current)
+            current, size = [], 0
+        current.append(exc)
+        size += est
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 async def _claim_next_job() -> str | None:
@@ -55,7 +85,7 @@ async def _load_job(db: AsyncSession, job_id: str) -> ExtractionJob | None:
 
 
 async def _process_job(job_id: str) -> None:
-    """Load and process a single extraction job in its own session."""
+    """Load and process an extraction job (single or multi-turn batch) in its own session."""
     async with async_session() as db:
         try:
             # Load job
@@ -64,52 +94,93 @@ async def _process_job(job_id: str) -> None:
                 logger.error("Job %s not found after claiming", job_id)
                 return
 
-            # Load exchange
+            # Determine exchange IDs to process
+            exchange_ids = job.exchange_ids if (job.exchange_ids and len(job.exchange_ids) > 0) else [job.exchange_id]
+
+            # Load exchanges in chronological order
             result = await db.execute(
-                select(Exchange).where(Exchange.id == job.exchange_id)
+                select(Exchange)
+                .where(Exchange.id.in_(exchange_ids))
+                .order_by(Exchange.created_at.asc())
             )
-            exchange = result.scalar_one_or_none()
-            if not exchange:
-                raise ExtractionError(f"Exchange {job.exchange_id} not found")
+            exchanges = list(result.scalars().all())
+            if not exchanges:
+                raise ExtractionError(f"No exchanges found for job {job_id} (IDs: {exchange_ids})")
+
+            primary_exchange = exchanges[-1]
+            project_id = primary_exchange.project_id
 
             # Load context for the extraction prompt
             project = None
-            if exchange.project_id:
-                project = await get_project(db, exchange.project_id)
+            if project_id:
+                project = await get_project(db, project_id)
 
-            existing = await get_recent_memories(db, project_id=exchange.project_id, limit=20)
+            existing = await get_recent_memories(db, project_id=project_id, limit=20)
             preferences = await get_memories_by_scope_type(db, "global", "preference", limit=10)
 
-            # Extract via LLM
-            candidates = await extract_memories(exchange, project, existing, preferences)
+            # Extract via LLM in token-budgeted chunks (large batches exceed
+            # provider TPM limits and cause timeouts when sent as one prompt)
+            chunks = _chunk_exchanges(exchanges, settings.extraction_chunk_tokens)
+            logger.info(
+                "Job %s: %d exchanges -> %d chunk(s) (budget %d tokens)",
+                job_id, len(exchanges), len(chunks), settings.extraction_chunk_tokens,
+            )
+            candidates = []
+            failed_chunks = 0
+            for idx, chunk in enumerate(chunks, 1):
+                try:
+                    chunk_candidates = await extract_memories(chunk, project, existing, preferences)
+                    candidates.extend(chunk_candidates)
+                    logger.info("Job %s: chunk %d/%d -> %d candidates", job_id, idx, len(chunks), len(chunk_candidates))
+                except ExtractionError as exc:
+                    failed_chunks += 1
+                    logger.error("Job %s: chunk %d/%d extraction failed: %s", job_id, idx, len(chunks), exc)
+
+            # Every chunk failing means the extraction genuinely broke — retry the job
+            if chunks and failed_chunks == len(chunks):
+                raise ExtractionError(f"All {len(chunks)} chunk(s) failed extraction")
 
             # Validate
-            validated = await validate_candidates(db, candidates, exchange)
+            validated = await validate_candidates(db, candidates, exchanges)
 
             # Store memories
             created = []
             for candidate in validated:
-                memory = await create_memory_from_candidate(db, candidate, exchange)
+                memory = await create_memory_from_candidate(db, candidate, primary_exchange)
                 created.append(memory)
                 await log_activity(
-                    db, "memory_created",
+                    db,
+                    "memory_created",
                     f"Extracted: {memory.content[:100]}",
                     memory_id=memory.id,
                     project_id=memory.project_id,
                 )
 
-            # Mark job done
+            now_utc = datetime.now(timezone.utc)
+
+            # Mark all exchanges in the batch as extracted
+            all_ids = [e.id for e in exchanges]
+            await db.execute(
+                update(Exchange)
+                .where(Exchange.id.in_(all_ids))
+                .values(extracted_at=now_utc)
+            )
+
+            # Mark job completed
             await db.execute(
                 update(ExtractionJob)
                 .where(ExtractionJob.id == job_id)
-                .values(status="done", completed_at=datetime.now(timezone.utc))
+                .values(status="completed", completed_at=now_utc)
             )
             await log_activity(
-                db, "extraction_completed",
-                f"Extracted {len(created)} memories from exchange {exchange.id}",
+                db,
+                "extraction_completed",
+                f"Batch extraction completed: Extracted {len(created)} memories from {len(exchanges)} exchanges"
+                + (f" ({len(chunks)} chunks, {failed_chunks} failed)" if len(chunks) > 1 or failed_chunks else ""),
+                project_id=project_id,
             )
             await db.commit()
-            logger.info("Job %s done: %d memories extracted", job_id, len(created))
+            logger.info("Job %s completed: %d memories extracted from %d exchanges", job_id, len(created), len(exchanges))
 
         except Exception as exc:
             await db.rollback()
@@ -127,7 +198,8 @@ async def _process_job(job_id: str) -> None:
                         .values(status="failed", error=str(exc)[:500])
                     )
                     await log_activity(
-                        db2, "extraction_failed",
+                        db2,
+                        "extraction_failed",
                         f"Failed after {job.attempts} attempts: {str(exc)[:200]}",
                     )
                 else:
@@ -153,8 +225,11 @@ async def extraction_worker() -> None:
                 await asyncio.sleep(settings.extraction_poll_interval)
                 continue
 
-            logger.info("Processing job %s", job_id)
-            await _process_job(job_id)
+            while job_id:
+                logger.info("Processing job %s", job_id)
+                await _process_job(job_id)
+                # Immediately claim next job — no sleep if queue has work
+                job_id = await _claim_next_job()
 
         except Exception as exc:
             logger.error("Worker loop error: %s", exc)

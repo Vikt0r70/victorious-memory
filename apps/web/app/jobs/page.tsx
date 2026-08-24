@@ -6,11 +6,11 @@ import ErrorBanner from "@/components/ui/ErrorBanner";
 import EmptyState from "@/components/ui/EmptyState";
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: "bg-[#d97721]/10 border-[#d97721] text-[#d97721]",
-  processing: "bg-[#3b82f6]/10 border-[#3b82f6] text-[#3b82f6]",
-  completed: "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]",
-  failed: "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]",
-  cancelled: "bg-[#908fa0]/10 border-[#908fa0] text-[#908fa0]",
+  pending: "bg-info/10 border-info text-info",
+  processing: "bg-[#3b82f6]/10 border-[#3b82f6] text-info",
+  completed: "bg-success/10 border-[#4ade80] text-success",
+  failed: "bg-destructive/10 border-[#ffb4ab] text-destructive",
+  cancelled: "bg-[#908fa0]/10 border-[#908fa0] text-muted-foreground",
 };
 
 function formatDuration(ms: number) {
@@ -80,13 +80,13 @@ export default function JobsPage() {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">Extraction Jobs</h1>
-          <p className="text-[#c7c4d7] text-[14px] mt-1">Background memory extraction pipeline</p>
+          <p className="text-muted-foreground text-[14px] mt-1">Background memory extraction pipeline</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={load} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#464554] rounded-sm text-[14px] text-[#c7c4d7] hover:bg-[#292932] transition-colors duration-200">
+          <button onClick={load} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-input rounded-md shadow-sm text-[14px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200 duration-200">
             <span className="material-symbols-outlined text-[16px]">refresh</span>Refresh
           </button>
-          <button onClick={handleRetryAll} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10 transition-colors duration-200">
+          <button onClick={handleRetryAll} className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-destructive rounded-sm text-[14px] hover:bg-destructive/10 transition-colors duration-200">
             <span className="material-symbols-outlined text-[16px]">replay</span>Retry All Failed
           </button>
         </div>
@@ -99,18 +99,18 @@ export default function JobsPage() {
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           {[
             { label: "Total Jobs", value: stats.total, icon: "engineering" },
-            { label: "Pending", value: stats.by_status?.pending || 0, icon: "pending", color: "text-[#d97721]" },
-            { label: "Processing", value: stats.by_status?.processing || 0, icon: "sync", color: "text-[#3b82f6]" },
-            { label: "Failed", value: stats.by_status?.failed || 0, icon: "error", color: "text-[#ffb4ab]" },
+            { label: "Pending", value: stats.by_status?.pending || 0, icon: "pending", color: "text-info" },
+            { label: "Processing", value: stats.by_status?.processing || 0, icon: "sync", color: "text-info" },
+            { label: "Failed", value: stats.by_status?.failed || 0, icon: "error", color: "text-destructive" },
             { label: "Avg Time", value: stats.avg_processing_time_ms ? formatDuration(stats.avg_processing_time_ms) : "—", icon: "timer" },
             { label: "Last Completed", value: stats.last_completed_at ? timeAgo(stats.last_completed_at) : "—", icon: "schedule" },
           ].map((s) => (
-            <div key={s.label} className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-4 hover-glow stat-card-transition hover:bg-[#292932] transition-colors duration-200">
+            <div key={s.label} className="bg-card border border-border rounded-lg p-4 hover-glow stat-card-transition hover:bg-accent hover:text-accent-foreground transition-all duration-200 duration-200">
               <div className="flex justify-between items-start">
-                <div className="text-[13px] text-[#c7c4d7]">{s.label}</div>
-                <span className={`material-symbols-outlined text-sm ${s.color || "text-[#c0c1ff]"}`}>{s.icon}</span>
+                <div className="text-[13px] text-muted-foreground">{s.label}</div>
+                <span className={`material-symbols-outlined text-sm ${s.color || "text-primary"}`}>{s.icon}</span>
               </div>
-              <div className={`font-mono text-2xl font-bold mt-1 ${s.color || "text-[#e4e1ed]"}`}>{s.value}</div>
+              <div className={`font-mono text-2xl font-bold mt-1 ${s.color || "text-foreground"}`}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -122,10 +122,10 @@ export default function JobsPage() {
           <button
             key={s}
             onClick={() => { setStatusFilter(s); setPage(1); }}
-            className={`cursor-pointer px-3 py-1.5 text-[13px] rounded-sm border transition-colors duration-200 ${
+            className={`cursor-pointer px-3 py-2 text-[13px] rounded-sm border transition-colors duration-200 ${
               statusFilter === s
-                ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]"
-                : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"
+                ? "bg-primary/20 border-primary text-primary"
+                : "border-input text-muted-foreground hover:bg-accent"
             }`}
           >
             {s || "All"}
@@ -134,8 +134,8 @@ export default function JobsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.5)] text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-border text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
           <div>Job ID</div><div>Exchange</div><div>Status</div><div>Attempts</div><div>Error</div><div>Created</div><div>Duration</div><div>Actions</div>
         </div>
         {loading ? (
@@ -146,24 +146,24 @@ export default function JobsPage() {
           <EmptyState title="No jobs found" message="Background extraction jobs will appear here." icon="work" />
         ) : (
           jobs.map((j) => (
-            <div key={j.id} className="cursor-pointer grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-[#292932] transition-colors duration-200">
-              <div className="font-mono text-[13px] text-[#e4e1ed] truncate">{j.id}</div>
-              <div className="font-mono text-[13px] text-[#c0c1ff] truncate">{j.exchange_id}</div>
+            <div key={j.id} className="cursor-pointer grid grid-cols-[140px_140px_100px_80px_1fr_100px_80px_80px] gap-2 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-accent hover:text-accent-foreground transition-all duration-200 duration-200">
+              <div className="font-mono text-[13px] text-foreground truncate">{j.id}</div>
+              <div className="font-mono text-[13px] text-primary truncate">{j.exchange_id}</div>
               <div><span className={`badge border ${STATUS_STYLES[j.status === "done" ? "completed" : j.status] || STATUS_STYLES.pending}`}>{j.status === "done" ? "completed" : j.status}</span></div>
-              <div className="font-mono text-[13px] text-[#c7c4d7]">{j.attempts}/{j.max_attempts}</div>
-              <div className="text-[13px] text-[#ffb4ab] truncate">{j.error || "-"}</div>
-              <div className="font-mono text-[13px] text-[#c7c4d7]">{timeAgo(j.created_at)}</div>
-              <div className="font-mono text-[13px] text-[#c7c4d7]">
+              <div className="font-mono text-[13px] text-muted-foreground">{j.attempts}/{j.max_attempts}</div>
+              <div className="text-[13px] text-destructive truncate">{j.error || "-"}</div>
+              <div className="font-mono text-[13px] text-muted-foreground">{timeAgo(j.created_at)}</div>
+              <div className="font-mono text-[13px] text-muted-foreground">
                 {j.started_at && j.completed_at ? formatDuration(new Date(j.completed_at).getTime() - new Date(j.started_at).getTime()) : "—"}
               </div>
               <div className="flex gap-2">
                 {j.status === "failed" && (
-                  <button onClick={() => handleRetry(j.id)} className="cursor-pointer text-[#c0c1ff] hover:text-[#e1e0ff]" title="Retry">
+                  <button onClick={() => handleRetry(j.id)} className="cursor-pointer text-primary hover:text-[#e1e0ff]" title="Retry">
                     <span className="material-symbols-outlined text-[18px]">replay</span>
                   </button>
                 )}
                 {j.status === "pending" && (
-                  <button onClick={() => handleCancel(j.id)} className="cursor-pointer text-[#908fa0] hover:text-[#ffb4ab]" title="Cancel">
+                  <button onClick={() => handleCancel(j.id)} className="cursor-pointer text-muted-foreground hover:text-destructive" title="Cancel">
                     <span className="material-symbols-outlined text-[18px]">cancel</span>
                   </button>
                 )}

@@ -25,9 +25,13 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Extraction
-    extraction_token_threshold: int = 500
+    extraction_token_threshold: int = 10000  # min tokens accumulated to trigger batch LLM extraction (default 10k)
     extraction_max_retries: int = 3
-    extraction_poll_interval: float = 2.0
+    extraction_poll_interval: float = 2.0  # seconds between queue polls
+    extraction_chunk_tokens: int = 6000  # max estimated conversation tokens per LLM call (keeps prompts under provider TPM limits)
+
+    # LLM calls
+    llm_timeout_seconds: int = 120  # per-completion timeout — large extraction prompts need well over 30s
 
     # Auto-approve
     auto_approve_enabled: bool = True

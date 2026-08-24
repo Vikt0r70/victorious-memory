@@ -7,15 +7,32 @@ import ErrorBanner from "@/components/ui/ErrorBanner";
 import EmptyState from "@/components/ui/EmptyState";
 import RejectReasonModal from "@/components/modals/RejectReasonModal";
 import EditMemoryModal from "@/components/modals/EditMemoryModal";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Check, CheckCheck, X, Ban, Pencil } from "lucide-react";
 
-const TYPE_COLORS: Record<string, string> = {
-  decision: "bg-[#8083ff]/10 border-[#8083ff] text-[#8083ff]",
-  preference: "bg-[#c0c1ff]/10 border-[#c0c1ff] text-[#c0c1ff]",
-  bugfix: "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]",
-  lesson: "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]",
-  pattern: "bg-[#a855f7]/10 border-[#a855f7] text-[#a855f7]",
-  architecture: "bg-[#d97721]/10 border-[#d97721] text-[#d97721]",
-  context: "bg-[#908fa0]/10 border-[#908fa0] text-[#908fa0]",
+type BadgeVariant =
+  | "default"
+  | "primary"
+  | "secondary"
+  | "muted"
+  | "outline"
+  | "success"
+  | "warning"
+  | "info"
+  | "destructive";
+
+const TYPE_VARIANTS: Record<string, BadgeVariant> = {
+  decision: "primary",
+  preference: "primary",
+  bugfix: "destructive",
+  lesson: "success",
+  pattern: "outline",
+  research: "outline",
+  reference: "outline",
+  architecture: "outline",
+  constraint: "warning",
+  context: "muted",
 };
 
 function timeAgo(d: string) {
@@ -54,11 +71,14 @@ export default function ReviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const notifyPendingChanged = () => window.dispatchEvent(new Event("victorious:pending-changed"));
+
   const handleApprove = async (id: string) => {
     setIsActionLoading(true);
     setError(null);
     try {
       await memoriesApi.approve(id);
+      notifyPendingChanged();
       await load();
     } catch (e: any) {
       setError(e.message || "Failed to approve memory");
@@ -78,6 +98,7 @@ export default function ReviewPage() {
     try {
       await memoriesApi.reject(id, reason);
       setRejectId(null);
+      notifyPendingChanged();
       await load();
     } catch (e: any) {
       setError(e.message || "Failed to reject memory");
@@ -100,6 +121,7 @@ export default function ReviewPage() {
     try {
       await memoriesApi.approve(memory.id);
       setEditMemory(null);
+      notifyPendingChanged();
       await load();
     } catch (e: any) {
       setError(e.message || "Failed to approve edited memory");
@@ -124,6 +146,7 @@ export default function ReviewPage() {
       setError(null);
       try {
         await memoriesApi.bulk("approve", high.map((m) => m.id));
+        notifyPendingChanged();
         await load();
       } catch (e: any) {
         setError(e.message || "Failed to bulk approve");
@@ -140,6 +163,7 @@ export default function ReviewPage() {
       setError(null);
       try {
         await memoriesApi.bulk("reject", low.map((m) => m.id));
+        notifyPendingChanged();
         await load();
       } catch (e: any) {
         setError(e.message || "Failed to bulk reject");
@@ -158,31 +182,31 @@ export default function ReviewPage() {
             <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">
               Review Queue
             </h1>
-            <span className="badge bg-[#d97721]/20 border border-[#d97721] text-[#d97721] text-[12px] px-2 py-1">
-              {memories.length} Pending
-            </span>
+            <Badge variant="info">{memories.length} pending</Badge>
           </div>
-          <p className="text-[#c7c4d7] text-[14px] mt-1">
+          <p className="text-muted-foreground text-[14px] mt-1">
             Review extracted memories before they are committed to the graph.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline-success"
+            size="sm"
             onClick={handleBulkApproveHigh}
             disabled={isActionLoading}
-            className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#4ade80] text-[#4ade80] rounded-sm text-[14px] hover:bg-[#4ade80]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-[16px]">done_all</span>
+            <CheckCheck />
             Approve High Conf
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline-destructive"
+            size="sm"
             onClick={handleBulkRejectLow}
             disabled={isActionLoading}
-            className="cursor-pointer flex items-center gap-1 px-3 py-2 border border-[#ffb4ab] text-[#ffb4ab] rounded-sm text-[14px] hover:bg-[#ffb4ab]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-[16px]">close</span>
+            <X />
             Reject Low Conf
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -206,42 +230,58 @@ export default function ReviewPage() {
           {memories.map((m, i) => (
             <div
               key={m.id}
-              className={`bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-5 fade-in-up delay-${(i + 1) * 100}`}
+              className={`bg-card border border-border rounded-lg p-5 fade-in-up delay-${(i + 1) * 100}`}
             >
               {/* Top badges */}
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className={`badge border ${TYPE_COLORS[m.memory_type] || TYPE_COLORS.context}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={TYPE_VARIANTS[m.memory_type] ?? "muted"} dot>
                     {m.memory_type}
-                  </span>
-                  <span className="badge bg-[#34343d] border border-[#464554] text-[#c7c4d7]">
+                  </Badge>
+                  <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
                     {m.scope}
-                  </span>
-                  <span className="text-[13px] text-[#908fa0] ml-2">
+                  </Badge>
+                  <span className="text-[13px] text-muted-foreground ml-1">
                     {timeAgo(m.created_at)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[14px] text-[#d97721]">
+                  <Badge
+                    variant={
+                      (m.confidence_score || 0) >= 0.85
+                        ? "success"
+                        : (m.confidence_score || 0) >= 0.5
+                          ? "info"
+                          : "warning"
+                    }
+                    className="font-mono"
+                  >
                     {(m.confidence_score || 0).toFixed(2)} conf
-                  </span>
+                  </Badge>
                   {m.confidence_label && (
-                    <span className="text-[12px] text-[#908fa0] italic">{m.confidence_label}</span>
+                    <span className="text-[12px] text-muted-foreground italic capitalize">
+                      {m.confidence_label}
+                    </span>
                   )}
                 </div>
               </div>
 
               {/* Content */}
-              <p className="text-[16px] text-[#e4e1ed] leading-relaxed mb-4">
+              <p className="text-[16px] text-foreground leading-relaxed mb-4">
                 {m.content}
               </p>
 
               {/* Tags */}
               {m.tags && m.tags.length > 0 && (
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Tags:</span>
+                <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mr-1">
+                    Tags
+                  </span>
                   {m.tags.map((tag: string) => (
-                    <span key={tag} className="badge bg-[#292932] border border-[#464554] text-[#c7c4d7]">{tag}</span>
+                    <Badge key={tag} variant="outline">
+                      <span aria-hidden="true" className="text-muted-foreground/60">#</span>
+                      {tag}
+                    </Badge>
                   ))}
                 </div>
               )}
@@ -252,62 +292,66 @@ export default function ReviewPage() {
                   <button
                     onClick={() => loadSimilar(m)}
                     disabled={isActionLoading}
-                    className="cursor-pointer text-[12px] text-[#c0c1ff] hover:underline flex items-center gap-1 disabled:opacity-50"
+                    className="cursor-pointer text-[12px] text-primary hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-[14px]">search</span>
                     Find similar existing memories
                   </button>
                   {similarMap[m.id] && similarMap[m.id].length > 0 && (
-                    <div className="mt-2 space-y-2 bg-[#0d0d15] border border-[#464554] rounded-sm p-3">
+                    <div className="mt-2 space-y-2 bg-background border border-input rounded-md shadow-sm p-3">
                       {similarMap[m.id].map((item: any) => (
                         <div key={item.memory.id} className="text-[13px]">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[#c0c1ff]">{item.score.toFixed(3)}</span>
-                            <span className="text-[#e4e1ed] line-clamp-1">{item.memory.content}</span>
+                            <span className="font-mono text-primary">{item.score.toFixed(3)}</span>
+                            <span className="text-foreground line-clamp-1">{item.memory.content}</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
                   {similarMap[m.id] && similarMap[m.id].length === 0 && (
-                    <p className="text-[12px] text-[#908fa0] mt-1">No similar memories found.</p>
+                    <p className="text-[12px] text-muted-foreground mt-1">No similar memories found.</p>
                   )}
                 </div>
               )}
 
               {/* Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[rgba(51,65,85,0.3)]">
-                <button
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60">
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => handleDefer(m.id)}
                   disabled={isActionLoading}
-                  className="cursor-pointer px-3 py-1.5 text-[14px] text-[#908fa0] hover:text-[#c7c4d7] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Defer
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline-destructive"
+                  size="sm"
                   onClick={() => handleReject(m.id, m.content)}
                   disabled={isActionLoading}
-                  className="cursor-pointer px-4 py-1.5 text-[14px] bg-[#93000a] text-[#ffb4ab] rounded-sm hover:bg-[#93000a]/80 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="material-symbols-outlined text-[16px]">block</span>
+                  <Ban />
                   Reject
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline-info"
+                  size="sm"
                   onClick={() => handleEditApprove(m)}
                   disabled={isActionLoading}
-                  className="cursor-pointer px-4 py-1.5 text-[14px] border border-[#3b82f6] text-[#3b82f6] rounded-sm hover:bg-[#3b82f6]/10 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="material-symbols-outlined text-[16px]">edit</span>
-                  Edit & Approve
-                </button>
-                <button
+                  <Pencil />
+                  Edit &amp; Approve
+                </Button>
+                <Button
+                  variant="success"
+                  size="sm"
                   onClick={() => handleApprove(m.id)}
                   disabled={isActionLoading}
-                  className="cursor-pointer px-4 py-1.5 text-[14px] bg-[#4ade80] text-[#0d0d15] font-semibold rounded-sm hover:bg-[#22c55e] transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="material-symbols-outlined text-[16px]">check</span>
+                  <Check />
                   Approve
-                </button>
+                </Button>
               </div>
             </div>
           ))}

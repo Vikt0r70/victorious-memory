@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ from litellm.exceptions import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import async_session
 from app.domains.providers.encryption import decrypt_api_key
 from app.domains.providers.exceptions import (
@@ -28,6 +30,8 @@ from app.domains.providers.exceptions import (
 )
 from app.domains.providers.service import create_usage_log, resolve_provider_chain
 from app.models import Provider
+
+logger = logging.getLogger(__name__)
 
 # Re-export exceptions for backward compatibility.
 __all__ = [
@@ -45,6 +49,38 @@ ProviderNotConfiguredError = ProviderError
 
 # Ensure LiteLLM does not retry internally — we handle fallback chains ourselves.
 litellm.num_retries = 0
+
+LITELLM_PREFIX: dict[str, str] = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "groq": "groq",
+    "ollama": "ollama",
+    "openrouter": "openai",   # OpenRouter endpoints are OpenAI-compatible
+    "opencode": "openai",     # OpenCode proxy is OpenAI-compatible
+    "custom": "openai",       # Custom endpoints are OpenAI-compatible
+}
+
+
+def format_litellm_model(provider_type: str, model: str) -> str:
+    """Format model identifier for LiteLLM routing."""
+    prefix = LITELLM_PREFIX.get(provider_type, "openai")
+    
+    # If the model string already specifies a provider prefix matching LiteLLM format, keep it
+    if "/" in model:
+        # e.g., openrouter/anthropic/claude-3-5-sonnet or openai/gpt-4o
+        first_part = model.split("/")[0].lower()
+        if first_part in ("openai", "anthropic", "groq", "ollama", "openrouter", "azure", "gemini", "bedrock"):
+            return model
+
+    if prefix == "openai":
+        return f"openai/{model}"
+    elif prefix == "anthropic":
+        return f"anthropic/{model}"
+    elif prefix == "groq":
+        return f"groq/{model}"
+    elif prefix == "ollama":
+        return f"ollama/{model}"
+    return f"{prefix}/{model}"
 
 
 class ProviderGateway:
@@ -82,7 +118,7 @@ class ProviderGateway:
         usage = getattr(response, "usage", None) if response else None
         prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
         completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
-        total_tokens = getattr(usage, "total_tokens", 0) if usage else 0
+        total_tokens = getattr(usage, "total_tokens", 0) if usage else (prompt_tokens + completion_tokens)
 
         await create_usage_log(
             db=db,
@@ -110,6 +146,7 @@ class ProviderGateway:
         temperature: float = 0.1,
         max_tokens: int = 4096,
         response_format: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> litellm.ModelResponse:
         """Send a chat completion through LiteLLM with provider fallback chain."""
         providers = await self._resolve_chain(agent_role)
@@ -119,6 +156,7 @@ class ProviderGateway:
                 f"No providers configured for role '{agent_role}'"
             )
 
+        effective_timeout = timeout or settings.llm_timeout_seconds
         last_error: Exception | None = None
 
         for position, provider in enumerate(providers):
@@ -128,20 +166,25 @@ class ProviderGateway:
                     if provider.api_key_encrypted
                     else ""
                 )
-                model_str = f"{provider.provider_type}/{provider.model}"
-                api_base = provider.base_url if provider.base_url else None
+                model_str = format_litellm_model(provider.provider_type, provider.model)
+                api_base = provider.base_url.rstrip("/") if provider.base_url else None
+
+                # Anthropic doesn't support openai-style response_format={"type": "json_object"}
+                actual_response_format = response_format
+                if provider.provider_type == "anthropic":
+                    actual_response_format = None
 
                 start = time.perf_counter()
                 response = await litellm.acompletion(
                     model=model_str,
                     messages=messages,
-                    api_key=api_key,
+                    api_key=api_key if api_key else None,
                     api_base=api_base,
                     temperature=temperature,
-                    max_tokens=max_tokens,
-                    response_format=response_format,
+                    max_tokens=max_tokens or provider.max_tokens or 4096,
+                    response_format=actual_response_format,
                     num_retries=0,
-                    timeout=30,
+                    timeout=effective_timeout,
                 )
                 latency_ms = int((time.perf_counter() - start) * 1000)
 
@@ -157,6 +200,10 @@ class ProviderGateway:
                     )
                 return response
             except AuthenticationError as exc:
+                logger.warning(
+                    "Authentication failed for provider %s (role %s, pos %d): %s",
+                    provider.name, agent_role, position, exc
+                )
                 async with async_session() as db:
                     await self._log_usage(
                         db=db,
@@ -165,17 +212,20 @@ class ProviderGateway:
                         response=None,
                         fallback_position=position,
                         status="error",
-                        error_message=str(exc),
+                        error_message=f"Auth error: {exc}",
                     )
-                raise ProviderAuthenticationError(
-                    f"Authentication failed for provider {provider.name}: {exc}"
-                ) from exc
+                last_error = exc
+                continue
             except (
                 RateLimitError,
                 Timeout,
                 APIConnectionError,
                 ServiceUnavailableError,
             ) as exc:
+                logger.warning(
+                    "Transient error on provider %s (role %s, pos %d): %s",
+                    provider.name, agent_role, position, exc
+                )
                 async with async_session() as db:
                     await self._log_usage(
                         db=db,
@@ -189,7 +239,10 @@ class ProviderGateway:
                 last_error = exc
                 continue
             except APIError as exc:
-                # Covers 5xx and other provider API errors.
+                logger.warning(
+                    "APIError from provider %s (role %s, pos %d): %s",
+                    provider.name, agent_role, position, exc
+                )
                 async with async_session() as db:
                     await self._log_usage(
                         db=db,
@@ -203,6 +256,10 @@ class ProviderGateway:
                 last_error = exc
                 continue
             except (BadRequestError, NotFoundError) as exc:
+                logger.warning(
+                    "BadRequest/NotFound from provider %s (role %s, pos %d): %s",
+                    provider.name, agent_role, position, exc
+                )
                 async with async_session() as db:
                     await self._log_usage(
                         db=db,
@@ -213,11 +270,13 @@ class ProviderGateway:
                         status="error",
                         error_message=str(exc),
                     )
-                raise ProviderError(
-                    f"Non-retryable error from provider {provider.name}: {exc}"
-                ) from exc
+                last_error = exc
+                continue
             except Exception as exc:
-                # Catch-all for unexpected errors — log and try next provider.
+                logger.error(
+                    "Unexpected error from provider %s (role %s, pos %d): %s",
+                    provider.name, agent_role, position, exc
+                )
                 async with async_session() as db:
                     await self._log_usage(
                         db=db,
@@ -247,44 +306,27 @@ class ProviderGateway:
         model_role: str = "extraction",
         response_format: str = "json",
         max_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> str:
-        """Send a chat completion and return the assistant's text.
-
-        Parameters
-        ----------
-        messages:
-            OpenAI-style message list.
-        model_role:
-            Logical role name used to look up provider config.
-        response_format:
-            ``"json"`` → asks the provider for JSON output, ``"text"`` for plain.
-        max_tokens:
-            Override the configured max_tokens if given.
-        """
-        fmt: dict[str, Any] | None = (
+        """Send a chat completion to the provider configured for *model_role*."""
+        rf_dict = (
             {"type": "json_object"} if response_format == "json" else None
         )
         response = await self._complete_model(
             agent_role=model_role,
             messages=messages,
-            temperature=0.1,
+            response_format=rf_dict,
             max_tokens=max_tokens or 4096,
-            response_format=fmt,
+            timeout=timeout,
         )
-        content = response.choices[0].message.content
-        return content or ""
-
-    # ------------------------------------------------------------------
-    # Old close() stub for compatibility
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        """No-op — kept for backward compatibility."""
-        pass
+        choices = getattr(response, "choices", None)
+        if choices and len(choices) > 0:
+            first_choice = choices[0]
+            message = getattr(first_choice, "message", None)
+            content = getattr(message, "content", "")
+            return content or ""
+        return ""
 
 
-# ---------------------------------------------------------------------------
-# Module-level singleton
-# ---------------------------------------------------------------------------
-
+# Global singleton instance.
 gateway = ProviderGateway()

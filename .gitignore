@@ -12,3 +12,25 @@ pgdata/
 .agent/
 .opencode/
 .encryption_key
+
+# local tooling / scratch (never publish)
+.agents/
+.claude/
+.iflow/
+.scratch/
+scratch/
+.planning/
+.serena/
+
+# logs & runtime artifacts
+*.log
+.victorious/
+
+# one-off scratch files
+badge-*.html
+badge-*.txt
+*-pres.txt
+pres.txt
+extract_code.py
+console.error*
+

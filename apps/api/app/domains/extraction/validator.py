@@ -73,26 +73,30 @@ def _confidence_label(score: float) -> str:
     return "low"
 
 
-def _is_grounded(candidate_content: str, exchange: Exchange) -> bool:
-    """Check that at least 3 non-stopword tokens overlap with the exchange."""
+def _is_grounded(candidate_content: str, exchanges: list[Exchange] | Exchange) -> bool:
+    """Check that at least 3 non-stopword tokens overlap with the exchange(s)."""
     candidate_tokens = _tokenize(candidate_content)
-    exchange_text = (exchange.user_content or "")
-    for part in exchange.agent_parts or []:
-        exchange_text += " " + (part.get("content", "") if isinstance(part, dict) else "")
+    exchange_list = [exchanges] if isinstance(exchanges, Exchange) else exchanges
+    exchange_text = ""
+    for exc in exchange_list:
+        exchange_text += " " + (exc.user_content or "")
+        for part in exc.agent_parts or []:
+            exchange_text += " " + (part.get("content", "") if isinstance(part, dict) else "")
     exchange_tokens = _tokenize(exchange_text)
     overlap = candidate_tokens & exchange_tokens
     return len(overlap) >= 3
 
 
-def _infer_source_type(exchange: Exchange) -> str:
-    user = (exchange.user_content or "").lower()
+def _infer_source_type(exchanges: list[Exchange] | Exchange) -> str:
+    exchange_list = [exchanges] if isinstance(exchanges, Exchange) else exchanges
+    user_combined = " ".join((exc.user_content or "").lower() for exc in exchange_list)
     explicit_phrases = [
         "i want", "i prefer", "i decided", "we should", "let's use",
         "i like", "i need", "i chose", "we need", "don't use",
         "make sure", "always", "never",
     ]
     for phrase in explicit_phrases:
-        if phrase in user:
+        if phrase in user_combined:
             return "user_statement"
     return "assistant_inference"
 
@@ -140,7 +144,7 @@ async def _check_duplicate(
 async def validate_candidates(
     db: AsyncSession,
     candidates: list[MemoryCandidate],
-    exchange: Exchange,
+    exchange: list[Exchange] | Exchange,
 ) -> list[ValidatedCandidate]:
     """Run the full validation pipeline on extracted candidates."""
     validated = []

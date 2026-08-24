@@ -6,10 +6,13 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://victorious:${DB_PASSWORD:-victorious}@db:5432/victorious
+      - PYTHONUNBUFFERED=1
     dns:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
+      # Mount local app code for live reload and quick iteration
+      - ./apps/api/app:/app/app
       # Cache HuggingFace models so they survive container rebuilds
       - hf_cache:/root/.cache/huggingface
     depends_on:

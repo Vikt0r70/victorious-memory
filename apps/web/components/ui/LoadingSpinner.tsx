@@ -1,11 +1,10 @@
 "use client";
+import { Loader2 } from "lucide-react";
 
 export default function LoadingSpinner() {
   return (
-    <div className="flex items-center justify-center">
-      <span className="material-symbols-outlined animate-spin text-[#c0c1ff] text-4xl">
-        progress_activity
-      </span>
+    <div className="flex items-center justify-center p-8">
+      <Loader2 className="animate-spin text-primary size-8" />
     </div>
   );
 }

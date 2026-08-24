@@ -2,103 +2,153 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { memoriesApi } from "@/lib/api";
+import {
+  LayoutDashboard,
+  BrainCircuit,
+  CheckSquare,
+  FolderGit2,
+  Network,
+  Activity,
+  Cpu,
+  ArrowLeftRight,
+  Settings,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", icon: "dashboard", label: "Dashboard" },
-  { href: "/memories", icon: "memory", label: "Memories" },
-  { href: "/review", icon: "fact_check", label: "Review Queue", badge: "pendingReview" as const },
-  { href: "/projects", icon: "folder_open", label: "Projects" },
-  { href: "/graph", icon: "hub", label: "Graph Explorer" },
-  { href: "/activity", icon: "history", label: "Activity Feed" },
-  { href: "/jobs", icon: "engineering", label: "Extraction Jobs" },
-  { href: "/exchanges", icon: "swap_horiz", label: "Raw Exchanges" },
+  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/memories", icon: BrainCircuit, label: "Memories" },
+  { href: "/review", icon: CheckSquare, label: "Review Queue", badge: "pendingReview" as const },
+  { href: "/projects", icon: FolderGit2, label: "Projects" },
+  { href: "/graph", icon: Network, label: "Graph Explorer" },
+  { href: "/activity", icon: Activity, label: "Activity Feed" },
+  { href: "/jobs", icon: Cpu, label: "Extraction Jobs" },
+  { href: "/exchanges", icon: ArrowLeftRight, label: "Raw Exchanges" },
 ];
 
 const bottomItems = [
-  { href: "/settings", icon: "settings", label: "Settings" },
+  { href: "/settings", icon: Settings, label: "Settings" },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  collapsed?: boolean;
+  onToggle?: () => void;
+}
+
+export default function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const [pendingCount, setPendingCount] = useState(0);
 
-  useEffect(() => {
-    fetch("/api/memories?status=pending_review&per_page=1")
-      .then((r) => r.json())
+  const refreshPending = useCallback(() => {
+    memoriesApi.list({ status: "pending_review", per_page: "1" })
       .then((data) => setPendingCount(data.total ?? 0))
-      .catch(() => setPendingCount(0));
+      .catch(() => {
+        // Transient failure — keep last known count instead of zeroing
+      });
   }, []);
+
+  useEffect(() => {
+    refreshPending();
+    const onPendingChanged = () => refreshPending();
+    window.addEventListener("victorious:pending-changed", onPendingChanged);
+    const interval = setInterval(refreshPending, 30000);
+    return () => {
+      window.removeEventListener("victorious:pending-changed", onPendingChanged);
+      clearInterval(interval);
+    };
+  }, [refreshPending, pathname]);
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   };
 
+  const renderLink = (item: (typeof navItems)[number]) => {
+    const active = isActive(item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={collapsed ? item.label : undefined}
+        className={cn(
+          "relative flex items-center rounded-md cursor-pointer transition-colors duration-200 font-medium text-sm",
+          collapsed ? "h-10 justify-center px-0 gap-0 mx-1.5" : "gap-3 px-3 py-2",
+          active
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        )}
+      >
+        <Icon className={cn("size-4 shrink-0", active ? "opacity-100" : "opacity-70")} />
+        {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+        {item.badge === "pendingReview" && pendingCount > 0 && (
+          collapsed ? (
+            <span className="absolute top-1.5 right-2 size-2 rounded-full bg-destructive ring-2 ring-sidebar" />
+          ) : (
+            <span className={cn(
+              "text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center",
+              active ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
+            )}>
+              {pendingCount}
+            </span>
+          )
+        )}
+      </Link>
+    );
+  };
+
   return (
-    <nav className="fixed left-0 top-0 h-full w-[260px] bg-[#1b1b23] border-r border-[#464554] flex flex-col py-6 z-20">
+    <nav
+      className={cn(
+        "fixed left-0 top-0 h-full bg-sidebar border-r border-border flex flex-col py-4 z-20 transition-[width] duration-300 ease-in-out",
+        collapsed ? "w-[68px]" : "w-[260px]"
+      )}
+    >
       {/* Logo */}
-      <div className="px-6 mb-8 flex items-center gap-3">
-        <div className="w-8 h-8 rounded bg-[#c0c1ff] text-[#1000a9] flex items-center justify-center font-bold text-lg">
+      <div className={cn("mb-6 flex items-center", collapsed ? "justify-center px-0" : "gap-3 px-6")}>
+        <div className="size-8 shrink-0 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
           V
         </div>
-        <div>
-          <div className="text-[18px] leading-[26px] font-bold text-[#e4e1ed]">
-            Victorious
+        {!collapsed && (
+          <div>
+            <div className="text-[16px] leading-tight font-bold text-foreground">
+              Victorious
+            </div>
+            <div className="text-[12px] leading-tight text-muted-foreground">
+              Memory Engine
+            </div>
           </div>
-          <div className="text-[13px] leading-[18px] text-[#c7c4d7]">
-            Memory Engine
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Main Nav */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors duration-200 rounded-r-sm border-l-4 ${
-              isActive(item.href)
-                ? "border-[#c0c1ff] bg-[#3e495d]/30 text-[#aeb9d0]"
-                : "border-transparent text-[#c7c4d7] hover:bg-[#292932] hover:text-[#e4e1ed]"
-            }`}
-          >
-            <span
-              className={`material-symbols-outlined ${
-                isActive(item.href) ? "fill" : ""
-              }`}
-            >
-              {item.icon}
-            </span>
-            <span className="flex-1">{item.label}</span>
-            {item.badge === "pendingReview" && pendingCount > 0 && (
-              <span className="bg-[#ffb4ab] text-[#93000a] text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                {pendingCount}
-              </span>
-            )}
-          </Link>
-        ))}
+      <div className={cn("flex-1 overflow-y-auto space-y-1", collapsed ? "px-0" : "px-3")}>
+        {navItems.map(renderLink)}
       </div>
 
       {/* Bottom Nav */}
-      <div className="px-2 space-y-1 pt-2 border-t border-[#464554]">
-        {bottomItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors duration-200 rounded-r-sm border-l-4 ${
-              isActive(item.href)
-                ? "border-[#c0c1ff] bg-[#3e495d]/30 text-[#aeb9d0]"
-                : "border-transparent text-[#c7c4d7] hover:bg-[#292932] hover:text-[#e4e1ed]"
-            }`}
-          >
-            <span className="material-symbols-outlined">{item.icon}</span>
-            <span>{item.label}</span>
-          </Link>
-        ))}
+      <div className={cn("space-y-1 pt-4 pb-2 border-t border-border mt-4", collapsed ? "px-0" : "px-3")}>
+        {bottomItems.map(renderLink)}
       </div>
+
+      {/* Collapse toggle */}
+      <button
+        type="button"
+        onClick={onToggle}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className={cn(
+          "mt-2 h-9 rounded-md text-muted-foreground hover:text-accent-foreground hover:bg-accent cursor-pointer transition-colors flex items-center",
+          collapsed ? "justify-center w-full mx-0" : "gap-2 px-3 mx-3 w-[calc(100%-24px)]"
+        )}
+      >
+        {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+        {!collapsed && <span className="text-sm font-medium">Collapse</span>}
+      </button>
     </nav>
   );
 }
-

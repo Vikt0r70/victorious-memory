@@ -20,6 +20,7 @@ from app.models import (
     MemoryEdge,
     Project,
     TimelineEntry,
+    UsageLog,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def system_info(db: AsyncSession = Depends(get_db)):
         "jobs": ExtractionJob,
         "projects": Project,
         "timeline_entries": TimelineEntry,
+        "usage_logs": UsageLog,
         "activity_log": ActivityLog,
     }
     sizes = {}
@@ -104,6 +106,7 @@ async def purge_all(
         raise HTTPException(400, "Add ?confirm=true to confirm data purge")
 
     # Delete in dependency order
+    await db.execute(delete(UsageLog))
     await db.execute(delete(ActivityLog))
     await db.execute(delete(MemoryEdge))
     await db.execute(delete(ExtractionJob))

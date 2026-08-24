@@ -3,6 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import CreateMemoryModal from "@/components/modals/CreateMemoryModal";
 import { activityApi } from "@/lib/api";
+import { Bell, Search, Plus, X, PlusCircle, CheckCircle2, XCircle, PlayCircle, Edit3, Trash2, Link as LinkIcon, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import Link from "next/link";
 
 function timeAgo(d: string) {
   if (!d) return "";
@@ -15,16 +19,16 @@ function timeAgo(d: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const EVENT_ICONS: Record<string, string> = {
-  memory_created: "add_circle",
-  memory_approved: "verified",
-  memory_rejected: "block",
-  extraction_started: "play_circle",
-  extraction_completed: "check_circle",
-  extraction_failed: "error",
-  memory_updated: "edit_note",
-  memory_deleted: "delete",
-  edge_created: "link",
+const EVENT_ICONS: Record<string, React.ElementType> = {
+  memory_created: PlusCircle,
+  memory_approved: CheckCircle2,
+  memory_rejected: XCircle,
+  extraction_started: PlayCircle,
+  extraction_completed: CheckCircle2,
+  extraction_failed: XCircle,
+  memory_updated: Edit3,
+  memory_deleted: Trash2,
+  edge_created: LinkIcon,
 };
 
 export default function TopBar() {
@@ -60,17 +64,15 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="flex justify-between items-center h-16 px-6 bg-[#13131b] border-b border-[#464554] sticky top-0 z-10 w-full">
+      <header className="flex justify-between items-center h-16 px-6 bg-background border-b border-border sticky top-0 z-10 w-full backdrop-blur-md bg-background/80">
         <div className="flex items-center gap-6 flex-1">
-          <div className="text-[24px] leading-[32px] font-black tracking-tight text-[#e4e1ed]">
-            Victorious Memory
+          <div className="text-[20px] font-bold tracking-tight text-foreground">
+            Victorious
           </div>
           <div className="relative flex-1 max-w-md">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#c7c4d7]">
-              search
-            </span>
-            <input
-              className="w-full bg-[#0d0d15] border border-[#464554] rounded-sm py-2 pl-10 pr-4 text-[14px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff] focus:ring-1 focus:ring-[#c0c1ff] placeholder-[#c7c4d7] transition-colors duration-300"
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground size-4" />
+            <Input
+              className="w-full bg-accent/50 border-transparent rounded-md py-2 pl-9 pr-4 text-sm focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary transition-all duration-300"
               placeholder="Semantic Search..."
               type="text"
               value={searchQuery}
@@ -78,68 +80,72 @@ export default function TopBar() {
             />
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <button
+        <div className="flex items-center gap-3">
+          <Button
             onClick={() => setShowCreate(true)}
-            className="bg-[#c0c1ff] hover:bg-[#e1e0ff] text-[#1000a9] font-semibold py-2 px-4 rounded-sm transition-colors duration-300 flex items-center gap-2 text-[14px] cursor-pointer"
+            size="sm"
+            className="hidden sm:flex gap-2 rounded-full px-4"
           >
-            <span className="material-symbols-outlined text-[18px]">add</span>
+            <Plus className="size-4" />
             Create Memory
-          </button>
+          </Button>
           <div className="relative" ref={notifRef}>
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setShowNotifications((v) => !v)}
-              className="text-[#c7c4d7] hover:text-[#e4e1ed] hover:bg-[#292932] rounded-full p-2 transition-colors duration-300 relative cursor-pointer"
+              className="relative text-muted-foreground hover:text-foreground rounded-full size-9"
             >
-              <span className="material-symbols-outlined">notifications</span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#ffb4ab] rounded-full border border-[#13131b]" />
-            </button>
+              <Bell className="size-5" />
+              <span className="absolute top-1.5 right-1.5 size-2 bg-primary rounded-full border-2 border-background" />
+            </Button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-[#1e293b] border border-[#464554] rounded-lg shadow-2xl z-50 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-[#464554]">
-                  <span className="text-[14px] font-semibold text-[#e4e1ed]">Notifications</span>
+              <div className="absolute right-0 top-full mt-2 w-80 bg-popover border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                  <span className="text-sm font-semibold text-foreground">Notifications</span>
                   <button
                     onClick={() => setShowNotifications(false)}
-                    className="text-[#c7c4d7] hover:text-[#e4e1ed]"
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    <span className="material-symbols-outlined text-[18px]">close</span>
+                    <X className="size-4" />
                   </button>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <div className="px-4 py-6 text-center text-[13px] text-[#908fa0]">
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                       No recent notifications
                     </div>
                   ) : (
-                    notifications.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-3 px-4 py-3 border-b border-[rgba(51,65,85,0.3)] hover:bg-[#292932] transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px] text-[#c0c1ff] mt-0.5">
-                          {EVENT_ICONS[item.event_type] || "info"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[13px] text-[#e4e1ed] truncate">
-                            {item.description}
-                          </div>
-                          <div className="text-[11px] text-[#908fa0] mt-0.5">
-                            {timeAgo(item.created_at)}
+                    notifications.map((item) => {
+                      const Icon = EVENT_ICONS[item.event_type] || Info;
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex items-start gap-3 px-4 py-3 border-b border-border hover:bg-accent/50 transition-colors cursor-pointer"
+                        >
+                          <Icon className="size-4 text-primary mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-foreground truncate">
+                              {item.description}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {timeAgo(item.created_at)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
-                <div className="px-4 py-2 border-t border-[#464554]">
-                  <a
+                <div className="px-4 py-3 border-t border-border bg-muted/10 text-center">
+                  <Link
                     href="/activity"
-                    className="text-[13px] text-[#c0c1ff] hover:text-[#e1e0ff] transition-colors"
+                    className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                   >
                     View all activity
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}

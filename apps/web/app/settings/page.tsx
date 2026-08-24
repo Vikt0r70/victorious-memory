@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { providersApi, agentsApi, usageApi, settingsApi, systemApi } from "@/lib/api";
+import { providersApi, agentsApi, usageApi, settingsApi, systemApi, ingestApi } from "@/lib/api";
 import ProviderConfigModal from "@/components/modals/ProviderConfigModal";
 import ConfirmPurgeModal from "@/components/modals/ConfirmPurgeModal";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import EmptyState from "@/components/ui/EmptyState";
-import UsageLogTable from "@/components/settings/UsageLogTable";
+import UsageLogTable, { type UsageLog } from "@/components/settings/UsageLogTable";
 
 const MEMORY_TYPES = [
   "decision", "preference", "constraint", "bugfix", "lesson",
@@ -20,9 +20,9 @@ const MEMORY_TYPES = [
 const SCOPES = ["project", "global", "cross_project"];
 
 const AGENT_ROLES = [
-  { value: "extraction", label: "Extraction", desc: "Entity and relationship extraction" },
-  { value: "edge_detection", label: "Edge Detection", desc: "Relationship linking" },
-  { value: "consolidation", label: "Consolidation", desc: "Merge duplicate memories" },
+  { value: "extraction", label: "Extraction", desc: "Entity and memory candidate extraction from conversations" },
+  { value: "edge_detection", label: "Edge Detection", desc: "Graph relationship and dependency linking" },
+  { value: "consolidation", label: "Consolidation", desc: "Merge duplicate memories and resolve contradictions" },
 ];
 
 interface Provider {
@@ -42,33 +42,28 @@ interface Agent {
   fallback_provider_ids?: string[];
 }
 
-interface UsageLog {
-  id: string;
-  agent_role: string;
-  provider_id: string;
-  provider_name: string;
-  model: string;
-  total_tokens: number;
-  latency_ms: number;
-  status: string;
-  created_at: string;
-}
-
 export default function SettingsPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [usageLogs, setUsageLogs] = useState<UsageLog[]>([]);
   const [settings, setSettings] = useState<Record<string, any>>({});
+  const [bufferStatus, setBufferStatus] = useState<any>(null);
+  const [extractingNow, setExtractingNow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
-  const [modalMode, setModalMode] = useState<"template" | "custom">("custom");
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [modalMode, setModalMode] = useState<"template" | "custom">("template");
+
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string; latency_ms?: number }>>({});
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
+
   const [routingSaving, setRoutingSaving] = useState(false);
-  const [agentTestResults, setAgentTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [agentTestResults, setAgentTestResults] = useState<Record<string, { ok: boolean; message: string; latency_ms?: number }>>({});
   const [agentTesting, setAgentTesting] = useState<Set<string>>(new Set());
+
   const [usageFilter, setUsageFilter] = useState<string>("all");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -83,28 +78,36 @@ export default function SettingsPage() {
     loadAllData();
   }, []);
 
+  const notify = (type: "success" | "error", message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [pRes, aRes, uRes, sRes] = await Promise.all([
-        providersApi.list().catch(() => ({ items: [] })),
-        agentsApi.list().catch(() => ({ items: [] })),
-        usageApi.list().catch(() => ({ items: [] })),
+      const [pRes, aRes, uRes, sRes, bRes] = await Promise.all([
+        providersApi.list().catch(() => []),
+        agentsApi.list().catch(() => []),
+        usageApi.list().catch(() => []),
         settingsApi.list().catch(() => ({ items: [] })),
+        ingestApi.bufferStatus().catch(() => null),
       ]);
 
-      const provs = pRes.items || pRes || [];
-      setProviders(Array.isArray(provs) ? provs : []);
+      const provs = Array.isArray(pRes) ? pRes : (pRes?.items || []);
+      setProviders(provs);
 
-      const ags = aRes.items || aRes || [];
-      setAgents(Array.isArray(ags) ? ags : []);
+      const ags = Array.isArray(aRes) ? aRes : (aRes?.items || []);
+      setAgents(ags);
 
-      const usage = uRes.items || uRes || [];
-      setUsageLogs(Array.isArray(usage) ? usage : []);
+      const usage = Array.isArray(uRes) ? uRes : (uRes?.items || []);
+      setUsageLogs(usage);
 
       const sett: Record<string, any> = {};
-      (sRes.items || []).forEach((i: any) => { sett[i.key] = i.value; });
+      (sRes?.items || []).forEach((i: any) => { sett[i.key] = i.value; });
       setSettings(sett);
+
+      setBufferStatus(bRes);
     } catch (e: any) {
       setError(e.message || "Failed to load settings data");
     } finally {
@@ -112,9 +115,33 @@ export default function SettingsPage() {
     }
   };
 
+  const handleExtractNow = async () => {
+    setExtractingNow(true);
+    try {
+      const res = await ingestApi.extractNow();
+      if (res.status === "empty") {
+        notify("error", "No unextracted exchanges buffered in the queue.");
+      } else {
+        notify("success", res.message || `Queued extraction job for ${res.exchanges_count} exchanges!`);
+        // Refresh buffer status
+        const updatedBuffer = await ingestApi.bufferStatus().catch(() => null);
+        setBufferStatus(updatedBuffer);
+      }
+    } catch (e: any) {
+      notify("error", `Failed to trigger extraction: ${e.message}`);
+    } finally {
+      setExtractingNow(false);
+    }
+  };
+
   const saveSetting = async (key: string, value: any) => {
-    await settingsApi.set(key, value);
-    setSettings((prev) => ({ ...prev, [key]: value }));
+    try {
+      await settingsApi.set(key, value);
+      setSettings((prev) => ({ ...prev, [key]: value }));
+      notify("success", `Setting '${key}' saved.`);
+    } catch (e: any) {
+      notify("error", `Failed to save setting: ${e.message}`);
+    }
   };
 
   const getSetting = (key: string, defaultValue: any) => {
@@ -131,16 +158,22 @@ export default function SettingsPage() {
       delete next[id];
       return next;
     });
+
     try {
       const res = await providersApi.test(id);
+      const ok = res.status === "success" || res.status === "ok";
       setTestResults((prev) => ({
         ...prev,
-        [id]: { ok: res.status === "ok" || res.ok === true, message: res.response || res.status || res.message || "Test completed" },
+        [id]: {
+          ok,
+          message: res.response || (ok ? "Connection verified" : res.error || "Failed"),
+          latency_ms: res.latency_ms,
+        },
       }));
     } catch (e: any) {
       setTestResults((prev) => ({
         ...prev,
-        [id]: { ok: false, message: e.message },
+        [id]: { ok: false, message: e.message || "Connection failed" },
       }));
     } finally {
       setTestingIds((prev) => {
@@ -155,26 +188,30 @@ export default function SettingsPage() {
     try {
       await providersApi.delete(id);
       setDeleteConfirmId(null);
+      notify("success", "Provider removed successfully.");
       await loadAllData();
     } catch (e: any) {
-      alert(`Delete failed: ${e.message}`);
+      notify("error", `Delete failed: ${e.message}`);
     }
   };
 
   const handleToggleProvider = async (provider: Provider) => {
     try {
+      const updated = !provider.is_enabled;
       await providersApi.update(provider.id, {
         name: provider.name,
         provider_type: provider.provider_type,
         base_url: provider.base_url,
         model: provider.model,
-        is_enabled: !provider.is_enabled,
+        max_tokens: provider.max_tokens,
+        is_enabled: updated,
       });
       setProviders((prev) =>
-        prev.map((p) => (p.id === provider.id ? { ...p, is_enabled: !p.is_enabled } : p))
+        prev.map((p) => (p.id === provider.id ? { ...p, is_enabled: updated } : p))
       );
+      notify("success", `Provider ${provider.name} ${updated ? "enabled" : "disabled"}.`);
     } catch (e: any) {
-      alert(`Update failed: ${e.message}`);
+      notify("error", `Toggle failed: ${e.message}`);
     }
   };
 
@@ -191,7 +228,7 @@ export default function SettingsPage() {
   const handlePrimaryChange = (role: string, providerId: string) => {
     setAgents((prev) =>
       prev.map((a) =>
-        a.role === role ? { ...a, primary_provider_id: providerId } : a
+        a.role === role ? { ...a, primary_provider_id: providerId || undefined } : a
       )
     );
   };
@@ -235,13 +272,16 @@ export default function SettingsPage() {
       await Promise.all(
         agents.map((agent) =>
           agentsApi.update(agent.role, {
-            primary_provider_id: agent.primary_provider_id,
-            fallback_provider_ids: agent.fallback_provider_ids?.filter(Boolean) || [],
+            role: agent.role,
+            primary_provider_id: agent.primary_provider_id || null,
+            fallback_provider_ids: (agent.fallback_provider_ids || []).filter(Boolean),
           })
         )
       );
+      notify("success", "Agent routing saved successfully.");
+      await loadAllData();
     } catch (e: any) {
-      alert(`Save routing failed: ${e.message}`);
+      notify("error", `Save routing failed: ${e.message}`);
     } finally {
       setRoutingSaving(false);
     }
@@ -254,16 +294,22 @@ export default function SettingsPage() {
       delete next[role];
       return next;
     });
+
     try {
       const res = await agentsApi.test(role);
+      const ok = res.status === "success" || res.status === "ok";
       setAgentTestResults((prev) => ({
         ...prev,
-        [role]: { ok: res.status === "ok" || res.ok === true, message: res.response || res.status || res.message || "Test completed" },
+        [role]: {
+          ok,
+          message: res.response || (ok ? "Response received" : res.error || "Failed"),
+          latency_ms: res.latency_ms,
+        },
       }));
     } catch (e: any) {
       setAgentTestResults((prev) => ({
         ...prev,
-        [role]: { ok: false, message: e.message },
+        [role]: { ok: false, message: e.message || "Test failed" },
       }));
     } finally {
       setAgentTesting((prev) => {
@@ -287,8 +333,9 @@ export default function SettingsPage() {
       a.download = `victorious-memory-export.${exportFormat}`;
       a.click();
       window.URL.revokeObjectURL(url);
+      notify("success", "Export downloaded.");
     } catch (e: any) {
-      alert(`Export error: ${e.message}`);
+      notify("error", `Export error: ${e.message}`);
     }
   };
 
@@ -302,8 +349,10 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Import failed");
       const data = await res.json();
       setImportStatus(`Imported: ${data.imported?.memories || 0} memories, ${data.imported?.projects || 0} projects`);
+      notify("success", "Data import completed.");
     } catch (e: any) {
       setImportStatus(`Error: ${e.message}`);
+      notify("error", `Import error: ${e.message}`);
     }
   };
 
@@ -312,8 +361,10 @@ export default function SettingsPage() {
     try {
       const r = await systemApi.reEmbed();
       setReembedStatus(`Started: ${r.count || 0} memories to process`);
+      notify("success", `Re-embedding ${r.count || 0} memories.`);
     } catch (e: any) {
       setReembedStatus(`Error: ${e.message}`);
+      notify("error", `Re-embedding failed: ${e.message}`);
     }
   };
 
@@ -321,9 +372,10 @@ export default function SettingsPage() {
     try {
       await systemApi.purge();
       setShowPurgeModal(false);
-      alert("All data purged.");
+      notify("success", "All data purged.");
+      await loadAllData();
     } catch (e: any) {
-      alert(`Error: ${e.message}`);
+      notify("error", `Error: ${e.message}`);
     }
   };
 
@@ -333,684 +385,850 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-16">
+      <div className="flex justify-center items-center py-24">
         <LoadingSpinner />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5 max-w-7xl mx-auto pb-12">
+      {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">Settings</h1>
-          <p className="text-[#c7c4d7] text-[14px] mt-1">Configure system behavior and integrations</p>
+          <h1 className="text-[28px] leading-tight font-bold tracking-tight text-foreground">
+            Settings & Provider Registry
+          </h1>
+          <p className="text-muted-foreground text-[14px] mt-0.5">
+            Configure LLM endpoints, agent routing chains, and system parameters
+          </p>
         </div>
       </div>
 
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`px-4 py-2.5 rounded-lg border text-[13px] flex items-center gap-2 animate-in fade-in ${
+            notification.type === "success"
+              ? "bg-success/10 border-success/30 text-success"
+              : "bg-destructive/10 border-destructive/30 text-destructive"
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">
+            {notification.type === "success" ? "check_circle" : "error"}
+          </span>
+          {notification.message}
+        </div>
+      )}
+
+      {error && <ErrorBanner message={error} />}
+
       <Tabs defaultValue="providers">
-        <TabsList variant="line" className="border-b border-[#464554] w-full justify-start gap-0 bg-transparent">
+        <TabsList className="border-b border-border w-full justify-start gap-1 bg-transparent p-0">
           <TabsTrigger
             value="providers"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
-            Providers
+            <span className="material-symbols-outlined text-[18px]">hub</span>
+            LLM Providers & Routing
           </TabsTrigger>
           <TabsTrigger
             value="extraction"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
+            <span className="material-symbols-outlined text-[18px]">psychology</span>
             Extraction
           </TabsTrigger>
           <TabsTrigger
             value="auto-approve"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
+            <span className="material-symbols-outlined text-[18px]">verified</span>
             Auto-Approve
           </TabsTrigger>
           <TabsTrigger
             value="lifecycle"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
+            <span className="material-symbols-outlined text-[18px]">published_with_changes</span>
             Lifecycle
           </TabsTrigger>
           <TabsTrigger
             value="plugin"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
+            <span className="material-symbols-outlined text-[18px]">extension</span>
             Plugin
           </TabsTrigger>
           <TabsTrigger
             value="data"
-            className="px-3 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-[#c7c4d7] hover:text-[#e4e1ed] data-[active=true]:border-[#c0c1ff] data-[active=true]:text-[#c0c1ff] bg-transparent rounded-none"
+            className="px-4 py-2.5 text-[14px] font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-primary bg-transparent rounded-none flex items-center gap-1.5 cursor-pointer"
           >
-            Data
+            <span className="material-symbols-outlined text-[18px]">database</span>
+            Data & Backup
           </TabsTrigger>
         </TabsList>
 
-        {/* Providers */}
-        <TabsContent value="providers">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-8">
-          {/* Provider Registry */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-[20px] font-semibold text-[#e4e1ed]">Provider Registry</h2>
-                <p className="text-[13px] text-[#c7c4d7]">Manage LLM providers and their configurations</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setModalMode("template");
-                    setEditProvider(null);
-                    setShowProviderModal(true);
-                  }}
-                  className="px-4 py-2 bg-[#c0c1ff] text-[#1000a9] font-semibold text-[14px] rounded-sm hover:bg-[#e1e0ff] transition-colors flex items-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-[16px]">add</span>
-                  Add from Template
-                </button>
-                <button
-                  onClick={() => {
-                    setModalMode("custom");
-                    setEditProvider(null);
-                    setShowProviderModal(true);
-                  }}
-                  className="px-4 py-2 border border-[#464554] text-[#c7c4d7] text-[14px] rounded-sm hover:bg-[#292932] transition-colors flex items-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-[16px]">edit</span>
-                  Add Custom
-                </button>
-              </div>
-            </div>
-
-            {providers.length === 0 ? (
-              <EmptyState
-                title="No providers configured yet."
-                message="Add a provider from the templates below."
-                icon="cloud_off"
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {providers.map((provider) => (
-                  <div
-                    key={provider.id}
-                    className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-5 hover:border-[#c0c1ff]/30 transition-colors"
+        {/* ── Providers & Routing Tab ─────────────────────────────────── */}
+        <TabsContent value="providers" className="pt-4">
+          <div className="space-y-8">
+            {/* 1. Provider Registry */}
+            <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+                <div>
+                  <h2 className="text-[18px] font-bold text-foreground flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">cloud_queue</span>
+                    Configured Providers
+                  </h2>
+                  <p className="text-[13px] text-muted-foreground">
+                    Manage LLM endpoints, credentials, and health status
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setModalMode("template");
+                      setEditProvider(null);
+                      setShowProviderModal(true);
+                    }}
+                    className="px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-[13px] rounded-sm hover:bg-primary/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#c0c1ff]">cloud</span>
-                        <h3 className="text-[16px] font-semibold text-[#e4e1ed]">{provider.name}</h3>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            setModalMode("custom");
-                            setEditProvider(provider);
-                            setShowProviderModal(true);
-                          }}
-                          className="p-1.5 text-[#c7c4d7] hover:text-[#c0c1ff] hover:bg-[#292932] rounded-sm transition-colors"
-                          title="Edit"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">edit</span>
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(provider.id)}
-                          className="p-1.5 text-[#c7c4d7] hover:text-[#ffb4ab] hover:bg-[#93000a]/10 rounded-sm transition-colors"
-                          title="Delete"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                      </div>
-                    </div>
+                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                    Add from Template
+                  </button>
+                  <button
+                    onClick={() => {
+                      setModalMode("custom");
+                      setEditProvider(null);
+                      setShowProviderModal(true);
+                    }}
+                    className="px-3.5 py-2 border border-border text-muted-foreground text-[13px] rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">tune</span>
+                    Add Custom
+                  </button>
+                </div>
+              </div>
 
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Type</span>
-                        <span className="badge bg-[#292932] border-[#464554] text-[#c7c4d7]">{provider.provider_type}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Model</span>
-                        <span className="text-[13px] text-[#c7c4d7] font-mono truncate max-w-[150px]">{provider.model || "—"}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#908fa0]">Base URL</span>
-                        <span className="text-[13px] text-[#c7c4d7] font-mono truncate max-w-[150px]">{provider.base_url || "—"}</span>
-                      </div>
-                    </div>
+              {providers.length === 0 ? (
+                <EmptyState
+                  title="No LLM providers configured"
+                  message="Add your first provider from the template picker to enable automated knowledge extraction."
+                  icon="cloud_off"
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {providers.map((provider) => {
+                    const test = testResults[provider.id];
+                    const isTesting = testingIds.has(provider.id);
 
-                    <div className="flex items-center justify-between pt-3 border-t border-[rgba(51,65,85,0.3)]">
-                      <button
-                        onClick={() => handleTestProvider(provider.id)}
-                        disabled={testingIds.has(provider.id)}
-                        className="text-[12px] text-[#c0c1ff] hover:text-[#e1e0ff] flex items-center gap-1 disabled:opacity-50"
+                    return (
+                      <div
+                        key={provider.id}
+                        className={`bg-muted/30 border rounded-xl p-5 flex flex-col justify-between transition-all hover:border-primary/40 shadow-xs ${
+                          provider.is_enabled ? "border-border" : "border-[#292932] opacity-60"
+                        }`}
                       >
-                        {testingIds.has(provider.id) ? (
-                          <span className="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
-                        ) : (
-                          <span className="material-symbols-outlined text-[14px]">play_circle</span>
-                        )}
-                        Test Connection
-                      </button>
-                        <Switch
-                          checked={provider.is_enabled}
-                          onCheckedChange={() => handleToggleProvider(provider)}
-                        />
-                    </div>
-
-                    {testResults[provider.id] && (
-                      <div className={`mt-3 text-[12px] border rounded-sm p-2 ${
-                        testResults[provider.id].ok
-                          ? "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]"
-                          : "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]"
-                      }`}>
-                        <div className="flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">
-                            {testResults[provider.id].ok ? "check_circle" : "error"}
-                          </span>
-                          {testResults[provider.id].message}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Agent Routing */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-[20px] font-semibold text-[#e4e1ed]">Agent Routing</h2>
-                <p className="text-[13px] text-[#c7c4d7]">Configure which providers each agent uses, with fallback chains</p>
-              </div>
-              <button
-                onClick={handleSaveRouting}
-                disabled={routingSaving}
-                className="px-4 py-2 bg-[#c0c1ff] text-[#1000a9] font-semibold text-[14px] rounded-sm hover:bg-[#e1e0ff] transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {routingSaving && (
-                  <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
-                )}
-                Save Routing
-              </button>
-            </div>
-
-            <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg divide-y divide-[rgba(51,65,85,0.3)]">
-              {AGENT_ROLES.map((role) => {
-                const primary = getAgentPrimary(role.value);
-                const fallbacks = getAgentFallbacks(role.value);
-                return (
-                  <div key={role.value} className="p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#c0c1ff]">smart_toy</span>
                         <div>
-                          <h3 className="text-[16px] font-semibold text-[#e4e1ed]">{role.label}</h3>
-                          <p className="text-[12px] text-[#908fa0]">{role.desc}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleTestAgent(role.value)}
-                        disabled={agentTesting.has(role.value)}
-                        className="px-3 py-1.5 text-[12px] border border-[#c0c1ff] text-[#c0c1ff] rounded-sm hover:bg-[#c0c1ff]/10 transition-colors disabled:opacity-50 flex items-center gap-1"
-                      >
-                        {agentTesting.has(role.value) ? (
-                          <span className="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
-                        ) : (
-                          <span className="material-symbols-outlined text-[14px]">play_circle</span>
-                        )}
-                        Test
-                      </button>
-                    </div>
+                          {/* Card Header */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary text-[20px]">
+                                  {provider.provider_type === "ollama"
+                                    ? "dns"
+                                    : provider.provider_type === "anthropic"
+                                    ? "psychology"
+                                    : "smart_toy"}
+                                </span>
+                                <h3 className="text-[15px] font-bold text-foreground truncate max-w-[170px]" title={provider.name}>
+                                  {provider.name}
+                                </h3>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="badge bg-muted border-border text-secondary-foreground text-[10px] uppercase font-mono">
+                                  {provider.provider_type}
+                                </span>
+                                {test?.ok ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-success font-medium">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80]" />
+                                    {test.latency_ms ? `${test.latency_ms}ms` : "Connected"}
+                                  </span>
+                                ) : test && !test.ok ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-destructive font-medium">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
+                                    Failed
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#908fa0]" />
+                                    Ready
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-                    {/* Primary Provider */}
-                    <div className="mb-3">
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#908fa0] mb-1.5">
-                        Primary Provider
-                      </label>
-                      <select
-                        className="w-full max-w-md bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
-                        value={primary}
-                        onChange={(e) => handlePrimaryChange(role.value, e.target.value)}
-                      >
-                        <option value="">Select a provider...</option>
-                        {providers.filter((p) => p.is_enabled).map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Fallback Chain */}
-                    {fallbacks.length > 0 && (
-                      <div className="space-y-2 mb-3">
-                        {fallbacks.map((fallbackId, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <span className="text-[12px] text-[#908fa0] w-20">Fallback {index + 1}</span>
-                            <select
-                              className="flex-1 max-w-md bg-[#0d0d15] border border-[#464554] rounded-sm p-2.5 text-[14px] text-[#e4e1ed] focus:outline-none focus:border-[#c0c1ff]"
-                              value={fallbackId}
-                              onChange={(e) => handleFallbackChange(role.value, index, e.target.value)}
-                            >
-                              <option value="">Select a provider...</option>
-                              {providers.filter((p) => p.is_enabled && p.id !== primary).map((p) => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => handleRemoveFallback(role.value, index)}
-                              className="p-1.5 text-[#c7c4d7] hover:text-[#ffb4ab] transition-colors"
-                              title="Remove fallback"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">remove_circle</span>
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setModalMode("custom");
+                                  setEditProvider(provider);
+                                  setShowProviderModal(true);
+                                }}
+                                className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-sm transition-colors cursor-pointer"
+                                title="Edit Provider"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(provider.id)}
+                                className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/20 rounded-sm transition-colors cursor-pointer"
+                                title="Delete Provider"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
 
-                    {fallbacks.length < 4 && (
-                      <button
-                        onClick={() => handleAddFallback(role.value)}
-                        className="text-[12px] text-[#c0c1ff] hover:text-[#e1e0ff] flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">add_circle</span>
-                        Add Fallback
-                      </button>
-                    )}
+                          {/* Details */}
+                          <div className="space-y-2 text-[12px] bg-background p-3 rounded-lg border border-border/50 mb-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Model:</span>
+                              <span className="font-mono text-foreground truncate max-w-[170px]" title={provider.model}>
+                                {provider.model || "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Endpoint:</span>
+                              <span className="font-mono text-secondary-foreground truncate max-w-[170px]" title={provider.base_url}>
+                                {provider.base_url || "Default"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Max Tokens:</span>
+                              <span className="font-mono text-foreground">
+                                {provider.max_tokens || 4096}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
 
-                    {agentTestResults[role.value] && (
-                      <div className={`mt-3 text-[12px] border rounded-sm p-2 ${
-                        agentTestResults[role.value].ok
-                          ? "bg-[#4ade80]/10 border-[#4ade80] text-[#4ade80]"
-                          : "bg-[#ffb4ab]/10 border-[#ffb4ab] text-[#ffb4ab]"
-                      }`}>
-                        <div className="flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">
-                            {agentTestResults[role.value].ok ? "check_circle" : "error"}
-                          </span>
-                          {agentTestResults[role.value].message}
+                        <div>
+                          {/* Test Result Message */}
+                          {test && (
+                            <div
+                              className={`text-[11px] rounded p-2 mb-3 ${
+                                test.ok
+                                  ? "bg-success/10 border border-success/30 text-success"
+                                  : "bg-destructive/10 border border-destructive/30 text-destructive"
+                              }`}
+                            >
+                              <div className="truncate" title={test.message}>
+                                {test.message}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          <div className="flex items-center justify-between pt-3 border-t border-[#292932]">
+                            <button
+                              onClick={() => handleTestProvider(provider.id)}
+                              disabled={isTesting}
+                              className="text-[12px] text-primary hover:text-[#e1e0ff] flex items-center gap-1.5 disabled:opacity-50 cursor-pointer font-medium"
+                            >
+                              {isTesting ? (
+                                <span className="material-symbols-outlined animate-spin text-[16px]">
+                                  progress_activity
+                                </span>
+                              ) : (
+                                <span className="material-symbols-outlined text-[16px]">
+                                  cable
+                                </span>
+                              )}
+                              {isTesting ? "Testing..." : "Test Connection"}
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-muted-foreground">
+                                {provider.is_enabled ? "Active" : "Disabled"}
+                              </span>
+                              <Switch
+                                checked={provider.is_enabled}
+                                onCheckedChange={() => handleToggleProvider(provider)}
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
 
-          {/* Usage Logs */}
-          <UsageLogTable
-            data={filteredUsageLogs}
-            filter={usageFilter}
-            onFilterChange={setUsageFilter}
-            agentRoles={AGENT_ROLES}
-          />
-        </Card>
-      </TabsContent>
-
-      {/* Extraction Config */}
-      <TabsContent value="extraction">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-[#c0c1ff]">settings_suggest</span>
-            <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Extraction Worker Settings</h3>
-          </div>
-          {[
-            { key: "extraction.token_threshold", label: "Token Threshold", type: "range", min: 200, max: 2000, step: 50, desc: "Tokens buffered before triggering extraction", default: 500 },
-            { key: "extraction.max_retries", label: "Max Retries", type: "number", min: 1, max: 10, desc: "Max retry attempts on LLM failure", default: 3 },
-            { key: "extraction.retry_backoff_base", label: "Retry Backoff Base (s)", type: "number", desc: "Base for exponential backoff", default: 2 },
-            { key: "extraction.worker_poll_interval", label: "Worker Poll Interval (s)", type: "number", min: 1, max: 30, desc: "Seconds between job queue polls", default: 3 },
-            { key: "extraction.max_concurrent_jobs", label: "Max Concurrent Jobs", type: "number", min: 1, max: 5, desc: "Parallel extraction jobs", default: 1 },
-          ].map((f) => (
-            <div key={f.key} className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] last:border-0">
-              <div>
-                <div className="text-[14px] text-[#e4e1ed]">{f.label}</div>
-                <div className="text-[12px] text-[#908fa0]">{f.desc}</div>
+            {/* 2. Agent Role Routing */}
+            <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+                <div>
+                  <h2 className="text-[18px] font-bold text-foreground flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">alt_route</span>
+                    Agent Role Routing & Fallback Chains
+                  </h2>
+                  <p className="text-[13px] text-muted-foreground">
+                    Assign primary providers and failover chains (up to 4 levels) per agent role
+                  </p>
+                </div>
+                <button
+                  onClick={handleSaveRouting}
+                  disabled={routingSaving}
+                  className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-[13px] rounded-sm hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-sm self-start sm:self-auto"
+                >
+                  {routingSaving && (
+                    <span className="material-symbols-outlined animate-spin text-[16px]">
+                      progress_activity
+                    </span>
+                  )}
+                  Save Routing
+                </button>
               </div>
-              {f.type === "range" ? (
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range" min={f.min} max={f.max} step={f.step}
-                    className="w-40"
-                    value={getSetting(f.key, f.default)}
-                    onChange={(e) => saveSetting(f.key, parseInt(e.target.value))}
-                  />
-                  <span className="font-mono text-[14px] w-12 text-right">{getSetting(f.key, f.default)}</span>
+
+              <div className="space-y-4">
+                {AGENT_ROLES.map((role) => {
+                  const primary = getAgentPrimary(role.value);
+                  const fallbacks = getAgentFallbacks(role.value);
+                  const testRes = agentTestResults[role.value];
+                  const isTesting = agentTesting.has(role.value);
+
+                  return (
+                    <div
+                      key={role.value}
+                      className="bg-muted/30 border border-border rounded-xl p-5 space-y-4"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-lg bg-muted border border-border text-primary flex items-center justify-center font-bold">
+                            <span className="material-symbols-outlined text-[20px]">psychology</span>
+                          </span>
+                          <div>
+                            <h3 className="text-[15px] font-bold text-foreground flex items-center gap-2">
+                              {role.label}
+                              {role.value === "extraction" && (
+                                <span className="badge bg-success/10 text-success border-success/30 text-[10px]">
+                                  Active Ingestion Worker
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[12px] text-muted-foreground">{role.desc}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleTestAgent(role.value)}
+                          disabled={isTesting || !primary}
+                          className="px-3 py-2 text-[12px] border border-primary text-primary rounded-sm hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                        >
+                          {isTesting ? (
+                            <span className="material-symbols-outlined animate-spin text-[14px]">
+                              progress_activity
+                            </span>
+                          ) : (
+                            <span className="material-symbols-outlined text-[14px]">
+                              play_circle
+                            </span>
+                          )}
+                          Test Pipeline
+                        </button>
+                      </div>
+
+                      {/* Primary Provider Selector */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-background p-3.5 rounded-lg border border-border/50">
+                        <div className="flex items-center gap-2">
+                          <span className="badge bg-primary/20 text-primary border-primary/30 text-[10px] uppercase font-bold">
+                            Step 1
+                          </span>
+                          <span className="text-[13px] font-medium text-foreground">
+                            Primary Provider
+                          </span>
+                        </div>
+                        <div className="md:col-span-2">
+                          <select
+                            className="w-full bg-card border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                            value={primary}
+                            onChange={(e) => handlePrimaryChange(role.value, e.target.value)}
+                          >
+                            <option value="">(No primary assigned — auto-select any enabled)</option>
+                            {providers.filter((p) => p.is_enabled).map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({p.model} · {p.provider_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Fallback Chain */}
+                      {fallbacks.length > 0 && (
+                        <div className="space-y-2 pl-2 border-l-2 border-border ml-3">
+                          {fallbacks.map((fallbackId, index) => (
+                            <div
+                              key={index}
+                              className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-background p-3 rounded-lg border border-border/50"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="badge bg-muted-foreground/20 text-muted-foreground border-[#908fa0]/30 text-[10px] uppercase">
+                                  Fallback #{index + 1}
+                                </span>
+                                <span className="text-[12px] text-muted-foreground">
+                                  Failover Target
+                                </span>
+                              </div>
+                              <div className="md:col-span-2 flex items-center gap-2">
+                                <select
+                                  className="flex-1 bg-card border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                                  value={fallbackId}
+                                  onChange={(e) =>
+                                    handleFallbackChange(role.value, index, e.target.value)
+                                  }
+                                >
+                                  <option value="">Select fallback provider...</option>
+                                  {providers
+                                    .filter((p) => p.is_enabled && p.id !== primary)
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name} ({p.model})
+                                      </option>
+                                    ))}
+                                </select>
+                                <button
+                                  onClick={() => handleRemoveFallback(role.value, index)}
+                                  className="p-1.5 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                                  title="Remove this fallback"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">
+                                    remove_circle
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {fallbacks.length < 4 && (
+                        <button
+                          onClick={() => handleAddFallback(role.value)}
+                          className="text-[12px] text-primary hover:text-[#e1e0ff] flex items-center gap-1 cursor-pointer ml-3 font-medium"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                          + Add Fallback Level ({fallbacks.length}/4)
+                        </button>
+                      )}
+
+                      {/* Agent Test Result */}
+                      {testRes && (
+                        <div
+                          className={`text-[12px] border rounded-lg p-3 ${
+                            testRes.ok
+                              ? "bg-success/10 border-success/30 text-success"
+                              : "bg-destructive/10 border-destructive/30 text-destructive"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[16px]">
+                                {testRes.ok ? "check_circle" : "error"}
+                              </span>
+                              {testRes.ok ? "Pipeline Test Passed" : "Pipeline Test Failed"}
+                            </div>
+                            {testRes.latency_ms && (
+                              <span className="text-[11px] font-mono">
+                                {testRes.latency_ms}ms
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 text-[11px] opacity-90 break-words font-mono">
+                            {testRes.message}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* 3. Usage Logs */}
+            <Card className="bg-card border border-border rounded-xl p-6 shadow-sm">
+              <UsageLogTable
+                data={filteredUsageLogs}
+                filter={usageFilter}
+                onFilterChange={setUsageFilter}
+                agentRoles={AGENT_ROLES}
+              />
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ── Extraction Tab ──────────────────────────────────────────── */}
+        <TabsContent value="extraction" className="pt-4">
+          <div className="space-y-6">
+            {/* Live Buffer Status Card */}
+            <Card className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+                <div>
+                  <h2 className="text-[17px] font-bold text-foreground flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">dataset</span>
+                    Conversation Token Buffer
+                  </h2>
+                  <p className="text-[13px] text-muted-foreground">
+                    Conversation exchanges buffer in PostgreSQL until the token threshold is reached
+                  </p>
+                </div>
+                <button
+                  onClick={handleExtractNow}
+                  disabled={extractingNow || !bufferStatus || bufferStatus.unextracted_exchanges_count === 0}
+                  className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-[13px] rounded-sm hover:bg-primary/90 transition-colors flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed self-start sm:self-auto"
+                >
+                  {extractingNow ? (
+                    <span className="material-symbols-outlined animate-spin text-[16px]">
+                      progress_activity
+                    </span>
+                  ) : (
+                    <span className="material-symbols-outlined text-[16px]">
+                      auto_awesome
+                    </span>
+                  )}
+                  Trigger Extraction Now
+                </button>
+              </div>
+
+              {bufferStatus ? (
+                <div className="space-y-3 bg-background p-4 rounded-lg border border-border/50">
+                  <div className="flex items-center justify-between text-[13px]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-medium">Accumulated Buffer:</span>
+                      <span className="font-mono text-primary font-bold text-[14px]">
+                        {bufferStatus.accumulated_tokens.toLocaleString()} / {bufferStatus.threshold.toLocaleString()} tokens
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        ({bufferStatus.unextracted_exchanges_count} unextracted exchanges)
+                      </span>
+                    </div>
+                    <span className="badge bg-primary/15 text-primary border-primary/30 text-[11px] font-bold">
+                      {bufferStatus.progress_pct}% ready
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-card rounded-full h-2.5 overflow-hidden border border-border">
+                    <div
+                      className="bg-gradient-to-r from-[#4ade80] via-[#c0c1ff] to-[#7979ff] h-full transition-all duration-500 rounded-full"
+                      style={{ width: `${Math.min(100, bufferStatus.progress_pct)}%` }}
+                    />
+                  </div>
+
+                  <p className="text-[12px] text-muted-foreground">
+                    💡 <em>During conversation, memory search and context injection are continuously available at zero LLM cost. When accumulated conversation hits the threshold, the server fires a batch extraction call to synthesize multi-turn durable knowledge.</em>
+                  </p>
                 </div>
               ) : (
-                <input
-                  type="number" min={f.min} max={f.max}
-                  className="w-24 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] text-right font-mono"
-                  value={getSetting(f.key, f.default)}
-                  onChange={(e) => saveSetting(f.key, parseInt(e.target.value))}
-                />
+                <div className="text-[13px] text-muted-foreground py-2">
+                  Loading buffer status...
+                </div>
               )}
-            </div>
-          ))}
+            </Card>
 
-          {/* Toggles */}
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div>
-              <div className="text-[14px] text-[#e4e1ed]">Extraction Enabled</div>
-              <div className="text-[12px] text-[#908fa0]">Master on/off for extraction worker</div>
-            </div>
-            <Switch
-              checked={getSetting("extraction.enabled", true)}
-              onCheckedChange={(v) => saveSetting("extraction.enabled", v)}
-            />
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <div className="text-[14px] text-[#e4e1ed]">Keyword-Only Mode</div>
-              <div className="text-[12px] text-[#908fa0]">Skip LLM, use keyword extraction only</div>
-              <div className="text-[12px] text-[#d97721] mt-0.5">Significantly reduces extraction quality</div>
-            </div>
-            <Switch
-              checked={getSetting("extraction.keyword_only_mode", false)}
-              onCheckedChange={(v) => saveSetting("extraction.keyword_only_mode", v)}
-            />
-          </div>
-        </Card>
-      </TabsContent>
-
-      {/* Auto-Approve */}
-      <TabsContent value="auto-approve">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-[#c0c1ff]">rule</span>
-            <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Auto-Approve Rules</h3>
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed]">Auto-Approve Enabled</div>
-            <Switch checked={getSetting("approval.auto_approve_enabled", true)} onCheckedChange={(v) => saveSetting("approval.auto_approve_enabled", v)} />
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed]">Confidence Threshold</div>
-            <div className="flex items-center gap-3">
-              <input type="range" min={0} max={1} step={0.05} className="w-40" value={getSetting("approval.confidence_threshold", 0.85)} onChange={(e) => saveSetting("approval.confidence_threshold", parseFloat(e.target.value))} />
-              <span className="font-mono text-[14px] w-12 text-right">{getSetting("approval.confidence_threshold", 0.85).toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed]">Never Auto-Approve Contradictions</div>
-            <Switch checked={getSetting("approval.never_auto_approve_contradictions", true)} onCheckedChange={(v) => saveSetting("approval.never_auto_approve_contradictions", v)} />
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed]">Require Review for Global</div>
-            <Switch checked={getSetting("approval.require_review_for_global", false)} onCheckedChange={(v) => saveSetting("approval.require_review_for_global", v)} />
-          </div>
-
-          {/* Allowed Types */}
-          <div className="py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed] mb-2">Allowed Types</div>
-            <div className="flex flex-wrap gap-2">
-              {MEMORY_TYPES.map((t) => {
-                const vals = getSetting("approval.allowed_types", MEMORY_TYPES);
-                const checked = Array.isArray(vals) && vals.includes(t);
-                return (
-                  <button
-                    key={t}
-                    onClick={() => {
-                      const current = getSetting("approval.allowed_types", MEMORY_TYPES);
-                      const arr = Array.isArray(current) ? [...current] : [...MEMORY_TYPES];
-                      const next = arr.includes(t) ? arr.filter((x: string) => x !== t) : [...arr, t];
-                      saveSetting("approval.allowed_types", next.length > 0 ? next : MEMORY_TYPES);
-                    }}
-                    className={`badge text-[10px] border transition-colors duration-200 ${
-                      checked ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]" : "bg-[#292932] border-[#464554] text-[#c7c4d7] hover:bg-[#334155]/40"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Allowed Scopes */}
-          <div className="py-3">
-            <div className="text-[14px] text-[#e4e1ed] mb-2">Allowed Scopes</div>
-            <div className="flex flex-wrap gap-2">
-              {SCOPES.map((s) => {
-                const vals = getSetting("approval.allowed_scopes", SCOPES);
-                const checked = Array.isArray(vals) && vals.includes(s);
-                return (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      const current = getSetting("approval.allowed_scopes", SCOPES);
-                      const arr = Array.isArray(current) ? [...current] : [...SCOPES];
-                      const next = arr.includes(s) ? arr.filter((x: string) => x !== s) : [...arr, s];
-                      saveSetting("approval.allowed_scopes", next.length > 0 ? next : SCOPES);
-                    }}
-                    className={`badge text-[10px] border transition-colors duration-200 ${
-                      checked ? "bg-[#c0c1ff]/20 border-[#c0c1ff] text-[#c0c1ff]" : "bg-[#292932] border-[#464554] text-[#c7c4d7] hover:bg-[#334155]/40"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
-      </TabsContent>
-
-      {/* Lifecycle */}
-      <TabsContent value="lifecycle">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-[#c0c1ff]">hourglass_empty</span>
-            <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Memory Lifecycle Config</h3>
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div>
-              <div className="text-[14px] text-[#e4e1ed]">Decay Enabled</div>
-              <div className="text-[12px] text-[#908fa0]">Gradually reduce confidence of unused memories</div>
-            </div>
-            <Switch checked={getSetting("lifecycle.decay_enabled", false)} onCheckedChange={(v) => saveSetting("lifecycle.decay_enabled", v)} />
-          </div>
-
-          <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.decay_enabled", false) ? "opacity-40" : ""}`}>
-            <div className="text-[14px] text-[#e4e1ed]">Decay Half-Life (days)</div>
-            <input
-              type="number"
-              disabled={!getSetting("lifecycle.decay_enabled", false)}
-              className="w-24 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] text-right font-mono disabled:cursor-not-allowed"
-              value={getSetting("lifecycle.decay_half_life_days", 90)}
-              onChange={(e) => saveSetting("lifecycle.decay_half_life_days", parseInt(e.target.value))}
-            />
-          </div>
-
-          <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.decay_enabled", false) ? "opacity-40" : ""}`}>
-            <div className="text-[14px] text-[#e4e1ed]">Min Confidence Before Deprecate</div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range" min={0} max={1} step={0.05} className="w-40"
-                disabled={!getSetting("lifecycle.decay_enabled", false)}
-                value={getSetting("lifecycle.min_confidence_before_deprecate", 0.3)}
-                onChange={(e) => saveSetting("lifecycle.min_confidence_before_deprecate", parseFloat(e.target.value))}
-              />
-              <span className="font-mono text-[14px] w-12 text-right">{getSetting("lifecycle.min_confidence_before_deprecate", 0.3).toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)]">
-            <div className="text-[14px] text-[#e4e1ed]">Consolidation Enabled</div>
-            <Switch checked={getSetting("lifecycle.consolidation_enabled", false)} onCheckedChange={(v) => saveSetting("lifecycle.consolidation_enabled", v)} />
-          </div>
-
-          <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.consolidation_enabled", false) ? "opacity-40" : ""}`}>
-            <div className="text-[14px] text-[#e4e1ed]">Consolidation Similarity Threshold</div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range" min={0} max={1} step={0.05} className="w-40"
-                disabled={!getSetting("lifecycle.consolidation_enabled", false)}
-                value={getSetting("lifecycle.consolidation_similarity_threshold", 0.85)}
-                onChange={(e) => saveSetting("lifecycle.consolidation_similarity_threshold", parseFloat(e.target.value))}
-              />
-              <span className="font-mono text-[14px] w-12 text-right">{getSetting("lifecycle.consolidation_similarity_threshold", 0.85).toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className={`flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] ${!getSetting("lifecycle.consolidation_enabled", false) ? "opacity-40" : ""}`}>
-            <div className="text-[14px] text-[#e4e1ed]">Consolidation Schedule (hours)</div>
-            <input
-              type="number"
-              disabled={!getSetting("lifecycle.consolidation_enabled", false)}
-              className="w-24 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] text-right font-mono disabled:cursor-not-allowed"
-              value={getSetting("lifecycle.consolidation_schedule_hours", 24)}
-              onChange={(e) => saveSetting("lifecycle.consolidation_schedule_hours", parseInt(e.target.value))}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-3">
-            <div className="text-[14px] text-[#e4e1ed]">Cleanup Rejected After (days)</div>
-            <input
-              type="number"
-              className="w-24 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] text-right font-mono"
-              value={getSetting("lifecycle.cleanup_rejected_after_days", 30)}
-              onChange={(e) => saveSetting("lifecycle.cleanup_rejected_after_days", parseInt(e.target.value))}
-            />
-          </div>
-        </Card>
-      </TabsContent>
-
-      {/* Plugin */}
-      <TabsContent value="plugin">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-[#c0c1ff]">extension</span>
-            <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Plugin Configuration</h3>
-          </div>
-          <p className="text-[13px] text-[#908fa0]">These settings are used by the OpenCode plugin. Changes take effect after restarting the plugin.</p>
-
-          {[
-            { key: "plugin.api_url", label: "API URL", type: "text", default: "http://localhost:8080", desc: "Where the plugin sends conversation data" },
-            { key: "plugin.token_threshold", label: "Token Threshold", type: "number", default: 500, desc: "When to flush buffered tokens to the API" },
-            { key: "plugin.inject_tokens", label: "Inject Tokens", type: "number", default: 1500, desc: "Max tokens injected into the system prompt" },
-            { key: "plugin.debug_mode", label: "Debug Mode", type: "toggle", default: false, desc: "Verbose console logging in the plugin" },
-          ].map((f) => (
-            <div key={f.key} className="flex items-center justify-between py-3 border-b border-[rgba(51,65,85,0.3)] last:border-0">
-              <div>
-                <div className="text-[14px] text-[#e4e1ed]">{f.label}</div>
-                <div className="text-[12px] text-[#908fa0]">{f.desc}</div>
+            {/* Runtime Configuration Card */}
+            <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="bg-primary/10 border border-primary/30 rounded-lg p-3.5 text-[13px] text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">tune</span>
+                <span>
+                  <strong>Batch Extraction Parameters:</strong> Configure the token accumulation milestone before the background LLM is invoked.
+                </span>
               </div>
-              {f.type === "toggle" ? (
-                <Switch checked={getSetting(f.key, f.default)} onCheckedChange={(v) => saveSetting(f.key, v)} />
-              ) : f.type === "number" ? (
-                <input
-                  type="number"
-                  className="w-24 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] text-right font-mono"
-                  value={getSetting(f.key, f.default)}
-                  onChange={(e) => saveSetting(f.key, parseInt(e.target.value))}
+
+              {[
+                {
+                  key: "extraction.token_threshold",
+                  label: "Batch Token Threshold",
+                  type: "range",
+                  min: 1000,
+                  max: 50000,
+                  step: 500,
+                  desc: "Tokens accumulated in conversation before triggering batch memory extraction (Default: 10,000 tokens / 10k). Higher values synthesize broader multi-turn context.",
+                  default: 10000,
+                },
+                {
+                  key: "extraction.max_retries",
+                  label: "Max Retries",
+                  type: "number",
+                  min: 1,
+                  max: 10,
+                  desc: "Maximum retry attempts upon provider failure before marking job failed",
+                  default: 3,
+                },
+                {
+                  key: "extraction.retry_backoff_base",
+                  label: "Retry Backoff Base (s)",
+                  type: "number",
+                  desc: "Exponential backoff multiplier (2^attempt seconds)",
+                  default: 2,
+                },
+                {
+                  key: "extraction.worker_poll_interval",
+                  label: "Worker Poll Interval (s)",
+                  type: "number",
+                  min: 1,
+                  max: 30,
+                  desc: "Interval between database queue polling checks",
+                  default: 2,
+                },
+              ].map((f) => (
+                <div key={f.key} className="flex items-center justify-between py-3 border-b border-[#292932] last:border-0">
+                  <div>
+                    <div className="text-[14px] font-medium text-foreground">{f.label}</div>
+                    <div className="text-[12px] text-muted-foreground">{f.desc}</div>
+                  </div>
+                  {f.type === "range" ? (
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={f.min}
+                        max={f.max}
+                        step={f.step}
+                        className="w-44 w-4 h-4 rounded border-input cursor-pointer shadow-sm transition-colors text-primary focus:ring-primary focus:ring-offset-background bg-background"
+                        value={getSetting(f.key, f.default)}
+                        onChange={(e) => saveSetting(f.key, parseInt(e.target.value, 10))}
+                      />
+                      <span className="font-mono text-[13px] w-16 text-right text-primary font-bold">
+                        {Number(getSetting(f.key, f.default)).toLocaleString()}t
+                      </span>
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min={f.min}
+                      max={f.max}
+                      className="w-24 bg-background border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground text-right font-mono focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                      value={getSetting(f.key, f.default)}
+                      onChange={(e) => saveSetting(f.key, parseInt(e.target.value, 10))}
+                    />
+                  )}
+                </div>
+              ))}
+
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <div className="text-[14px] font-medium text-foreground">Extraction Enabled</div>
+                  <div className="text-[12px] text-muted-foreground">Global toggle to pause background extraction worker</div>
+                </div>
+                <Switch
+                  checked={getSetting("extraction.enabled", true)}
+                  onCheckedChange={(v) => saveSetting("extraction.enabled", v)}
                 />
-              ) : (
+              </div>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ── Auto-Approve Tab ────────────────────────────────────────── */}
+        <TabsContent value="auto-approve" className="pt-4">
+          <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between py-3 border-b border-[#292932]">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Auto-Approve High Confidence</div>
+                <div className="text-[12px] text-muted-foreground">Automatically approve candidate memories that meet confidence threshold</div>
+              </div>
+              <Switch
+                checked={getSetting("approval.auto_approve_enabled", true)}
+                onCheckedChange={(v) => saveSetting("approval.auto_approve_enabled", v)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-[#292932]">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Confidence Threshold</div>
+                <div className="text-[12px] text-muted-foreground">Minimum score (0.00 – 1.00) required for auto-approval</div>
+              </div>
+              <div className="flex items-center gap-3">
                 <input
-                  type="text"
-                  className="w-64 bg-[#0d0d15] border border-[#464554] rounded-sm p-2 text-[14px] text-[#e4e1ed] font-mono"
-                  value={getSetting(f.key, f.default)}
-                  onChange={(e) => saveSetting(f.key, e.target.value)}
+                  type="range"
+                  min={0.5}
+                  max={1.0}
+                  step={0.05}
+                  className="w-40 w-4 h-4 rounded border-input cursor-pointer shadow-sm transition-colors text-primary focus:ring-primary focus:ring-offset-background bg-background"
+                  value={getSetting("approval.confidence_threshold", 0.85)}
+                  onChange={(e) => saveSetting("approval.confidence_threshold", parseFloat(e.target.value))}
                 />
-              )}
+                <span className="font-mono text-[13px] w-12 text-right text-primary">
+                  {Number(getSetting("approval.confidence_threshold", 0.85)).toFixed(2)}
+                </span>
+              </div>
             </div>
-          ))}
-        </Card>
-      </TabsContent>
 
-      {/* Data Management */}
-      <TabsContent value="data">
-        <Card className="bg-[#1f1f27] border border-[#464554] rounded-lg p-6 space-y-4">
-          <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-6">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-[#c0c1ff]">download</span>
-              <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Export Data</h3>
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Never Auto-Approve Contradictions</div>
+                <div className="text-[12px] text-muted-foreground">Always require human review if memory contradicts existing records</div>
+              </div>
+              <Switch
+                checked={getSetting("approval.never_auto_approve_contradictions", true)}
+                onCheckedChange={(v) => saveSetting("approval.never_auto_approve_contradictions", v)}
+              />
             </div>
-            <p className="text-[13px] text-[#908fa0]">Download all memories, projects, edges, and settings.</p>
-            <div className="flex gap-2 mb-3">
+          </Card>
+        </TabsContent>
+
+        {/* ── Lifecycle Tab ───────────────────────────────────────────── */}
+        <TabsContent value="lifecycle" className="pt-4">
+          <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+            <div className="bg-secondary border border-input rounded-lg p-3.5 text-[13px] text-muted-foreground flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">history_edu</span>
+              <span>
+                Memory decay, consolidation schedules, and cleanup policies.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-[#292932]">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Memory Decay Enabled</div>
+                <div className="text-[12px] text-muted-foreground">Gradually lower confidence of memories that haven't been accessed</div>
+              </div>
+              <Switch
+                checked={getSetting("lifecycle.decay_enabled", false)}
+                onCheckedChange={(v) => saveSetting("lifecycle.decay_enabled", v)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Cleanup Rejected Memories</div>
+                <div className="text-[12px] text-muted-foreground">Days before permanently purging rejected memories</div>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                className="w-24 bg-background border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground text-right font-mono focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                value={getSetting("lifecycle.cleanup_rejected_after_days", 30)}
+                onChange={(e) => saveSetting("lifecycle.cleanup_rejected_after_days", parseInt(e.target.value, 10))}
+              />
+            </div>
+          </Card>
+        </TabsContent>
+
+        {/* ── Plugin Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="plugin" className="pt-4">
+          <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between py-3 border-b border-[#292932]">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Plugin API URL</div>
+                <div className="text-[12px] text-muted-foreground">Default Victorious API endpoint for OpenCode plugin hooks</div>
+              </div>
+              <input
+                type="text"
+                className="w-64 bg-background border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground font-mono focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                value={getSetting("plugin.api_url", "http://localhost:8080")}
+                onChange={(e) => saveSetting("plugin.api_url", e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between py-3 border-b border-[#292932]">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Injected Memory Token Budget</div>
+                <div className="text-[12px] text-muted-foreground">Maximum tokens injected into system prompt before LLM calls</div>
+              </div>
+              <input
+                type="number"
+                min={200}
+                max={4000}
+                step={100}
+                className="w-24 bg-background border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground text-right font-mono focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                value={getSetting("plugin.inject_tokens", 1500)}
+                onChange={(e) => saveSetting("plugin.inject_tokens", parseInt(e.target.value, 10))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-[14px] font-medium text-foreground">Debug Logging</div>
+                <div className="text-[12px] text-muted-foreground">Verbose logging in OpenCode extension host</div>
+              </div>
+              <Switch
+                checked={getSetting("plugin.debug_mode", false)}
+                onCheckedChange={(v) => saveSetting("plugin.debug_mode", v)}
+              />
+            </div>
+          </Card>
+        </TabsContent>
+
+        {/* ── Data & Backup Tab ───────────────────────────────────────── */}
+        <TabsContent value="data" className="pt-4">
+          <Card className="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm">
+            {/* Export */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-3 border-b border-[#292932]">
+              <div>
+                <h3 className="text-[15px] font-bold text-foreground">Export Knowledge Base</h3>
+                <p className="text-[12px] text-muted-foreground">Download all memories, projects, and relationships</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  className="bg-background border border-input rounded-md shadow-sm p-2 text-[13px] text-foreground focus:outline-none"
+                  value={exportFormat}
+                  onChange={(e: any) => setExportFormat(e.target.value)}
+                >
+                  <option value="json">JSON Format</option>
+                  <option value="csv">CSV Format</option>
+                </select>
+                <button
+                  onClick={handleExport}
+                  className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-[13px] rounded-sm hover:bg-primary/90 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Export Data
+                </button>
+              </div>
+            </div>
+
+            {/* Vector Re-Embed */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-3 border-b border-[#292932]">
+              <div>
+                <h3 className="text-[15px] font-bold text-foreground">Re-generate Vector Embeddings</h3>
+                <p className="text-[12px] text-muted-foreground">Recalculate pgvector embeddings for all memories in database</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {reembedStatus && <span className="text-[12px] text-primary font-mono">{reembedStatus}</span>}
+                <button
+                  onClick={handleReembed}
+                  className="px-4 py-2 border border-border text-muted-foreground text-[13px] rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">sync</span>
+                  Re-embed All
+                </button>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="p-4 rounded-lg bg-destructive/10 border border-[#93000a]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-[15px] font-bold text-destructive">Danger Zone: Purge System Data</h3>
+                <p className="text-[12px] text-destructive/80">
+                  Permanently delete all memories, raw exchanges, projects, and execution logs.
+                </p>
+              </div>
               <button
-                onClick={() => setExportFormat("json")}
-                className={`px-3 py-1.5 border rounded-sm text-[13px] transition-colors ${exportFormat === "json" ? "border-[#c0c1ff] bg-[#c0c1ff]/10 text-[#c0c1ff]" : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"}`}
+                onClick={() => setShowPurgeModal(true)}
+                className="px-4 py-2 bg-destructive text-white font-semibold text-[13px] rounded-md shadow-sm hover:bg-destructive/90 transition-colors flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
               >
-                JSON
-              </button>
-              <button
-                onClick={() => setExportFormat("csv")}
-                className={`px-3 py-1.5 border rounded-sm text-[13px] transition-colors ${exportFormat === "csv" ? "border-[#c0c1ff] bg-[#c0c1ff]/10 text-[#c0c1ff]" : "border-[#464554] text-[#c7c4d7] hover:bg-[#292932]"}`}
-              >
-                CSV
+                <span className="material-symbols-outlined text-[16px]">delete_forever</span>
+                Purge All Data
               </button>
             </div>
-            <button onClick={handleExport} className="px-4 py-2 border border-[#464554] text-[14px] text-[#c7c4d7] rounded-sm hover:bg-[#292932] transition-colors flex items-center gap-1">
-              <span className="material-symbols-outlined text-[16px]">download</span>Export All Data
-            </button>
-          </div>
-
-          <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-[#c0c1ff]">upload</span>
-              <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Import Data</h3>
-            </div>
-            <p className="text-[13px] text-[#908fa0]">Upload a previously exported JSON or CSV file.</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleImport(file);
-              }}
-            />
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) handleImport(file); }}
-              onDragOver={(e) => e.preventDefault()}
-              className="border-2 border-dashed border-[#464554] rounded-sm p-6 text-center text-[#908fa0] hover:border-[#c0c1ff] transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-3xl mb-1">upload_file</span>
-              <div className="text-[13px]">Click or drop files here</div>
-            </div>
-            {importStatus && <p className="text-[12px] text-[#c7c4d7]">{importStatus}</p>}
-          </div>
-
-          <div className="bg-[#1e293b] border border-[rgba(51,65,85,0.5)] rounded-lg p-6 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-[#d97721]">sync</span>
-              <h3 className="text-[18px] font-semibold text-[#e4e1ed]">Vector Operations</h3>
-            </div>
-            <p className="text-[13px] text-[#908fa0]">Regenerate all embeddings. Useful after changing the embedding model.</p>
-            <button onClick={handleReembed} className="px-4 py-2 border border-[#d97721] text-[#d97721] text-[14px] rounded-sm hover:bg-[#d97721]/10 transition-colors flex items-center gap-1">
-              <span className="material-symbols-outlined text-[16px]">sync</span>Re-embed All
-            </button>
-            {reembedStatus && <p className="text-[12px] text-[#c7c4d7]">{reembedStatus}</p>}
-          </div>
-
-          <div className="bg-[#1e293b] border border-[#93000a]/30 rounded-lg p-6 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-[#ffb4ab]">warning</span>
-              <h3 className="text-[18px] font-semibold text-[#ffb4ab]">Danger Zone</h3>
-            </div>
-            <p className="text-[13px] text-[#c7c4d7]">Permanently delete all memories, edges, exchanges, jobs, and projects. This cannot be undone.</p>
-            <button
-              onClick={() => setShowPurgeModal(true)}
-              className="px-6 py-2.5 bg-[#93000a] text-[#ffdad6] font-semibold rounded-sm hover:bg-[#93000a]/80 transition-colors flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[18px]">delete_forever</span>Purge All Data
-            </button>
-          </div>
-        </Card>
-      </TabsContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Provider Modal */}
+      {/* Provider Config Modal */}
       {showProviderModal && (
         <ProviderConfigModal
           provider={editProvider}
@@ -1018,6 +1236,7 @@ export default function SettingsPage() {
           onClose={() => setShowProviderModal(false)}
           onSaved={() => {
             setShowProviderModal(false);
+            notify("success", "Provider configuration saved.");
             loadAllData();
           }}
         />
@@ -1026,31 +1245,29 @@ export default function SettingsPage() {
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
         <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4"
           onClick={(e) => e.target === e.currentTarget && setDeleteConfirmId(null)}
         >
-          <div className="bg-[#1e293b] border border-[#93000a]/30 rounded-xl shadow-2xl w-full max-w-sm">
-            <div className="flex items-center gap-2 p-6 border-b border-[#93000a]/30">
-              <span className="material-symbols-outlined text-[#ffb4ab]">warning</span>
-              <h2 className="text-[18px] font-semibold text-[#ffb4ab]">Delete Provider</h2>
+          <div className="bg-card border border-destructive/30 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <span className="material-symbols-outlined text-[24px]">warning</span>
+              <h3 className="text-[17px] font-bold">Delete Provider</h3>
             </div>
-            <div className="p-6">
-              <p className="text-[14px] text-[#e4e1ed]">
-                Are you sure you want to delete this provider? This action cannot be undone.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3 p-6 border-t border-[#93000a]/30">
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
+              Are you sure you want to delete this provider? Any agent fallback assignments using this provider will be safely unlinked.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 text-[14px] text-[#c7c4d7] border border-[#464554] rounded-sm hover:bg-[#292932] transition-colors"
+                className="px-4 py-2 border border-border text-muted-foreground text-[13px] rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDeleteProvider(deleteConfirmId)}
-                className="px-4 py-2 text-[14px] bg-[#93000a] text-[#ffb4ab] font-semibold rounded-sm hover:bg-[#93000a]/80 transition-colors"
+                className="px-4 py-2 bg-destructive text-white font-semibold text-[13px] rounded-md shadow-sm hover:bg-destructive/90 transition-colors"
               >
-                Delete
+                Confirm Delete
               </button>
             </div>
           </div>
@@ -1067,5 +1284,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-
-

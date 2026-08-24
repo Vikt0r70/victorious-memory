@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 
 from sqlalchemy import select, text as sa_text
@@ -11,6 +13,8 @@ from app.models import Memory
 
 from .bm25 import bm25_rank
 from .embeddings import embed_text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,7 +65,9 @@ async def hybrid_search(
         status_filter = ["active"]
 
     # Step 1 — embed query
+    _t0 = time.perf_counter()
     query_vector = await embed_text(_query)
+    _t1 = time.perf_counter()
     candidate_limit = top_k * 3
 
     # Step 2 — semantic retrieval via pgvector
@@ -93,6 +99,7 @@ async def hybrid_search(
 
         result = await session.execute(stmt)
         rows = result.all()
+        _t2 = time.perf_counter()
     finally:
         if _session_ctx is not None:
             await _session_ctx.__aexit__(None, None, None)
@@ -111,6 +118,15 @@ async def hybrid_search(
         (mem.id, mem.content) for mem, _ in candidates
     ]
     bm25_scores = dict(bm25_rank(_query, doc_list))
+    _t3 = time.perf_counter()
+    logger.info(
+        "hybrid_search timings: embed=%.0fms db=%.0fms bm25=%.0fms total=%.0fms candidates=%d",
+        (_t1 - _t0) * 1000,
+        (_t2 - _t1) * 1000,
+        (_t3 - _t2) * 1000,
+        (_t3 - _t0) * 1000,
+        len(candidates),
+    )
 
     # Step 4 — fuse scores
     fused: list[SearchResult] = []

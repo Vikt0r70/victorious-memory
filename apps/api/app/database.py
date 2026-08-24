@@ -28,3 +28,10 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Idempotent column additions for backward-compatible migrations
+        await conn.execute(
+            text("ALTER TABLE exchanges ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMPTZ DEFAULT NULL")
+        )
+        await conn.execute(
+            text("ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS exchange_ids TEXT[] DEFAULT '{}'")
+        )

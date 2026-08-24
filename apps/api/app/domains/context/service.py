@@ -27,7 +27,7 @@ async def build_context(
         project_name = project.display_name if project else None
 
     sections: list[str] = []
-    memory_ids: list[str] = []
+    section_ids: list[list[str]] = []  # parallel list: memory IDs per section
     used_ids: set[str] = set()
 
     # --- Section 1: Project decisions ---
@@ -45,12 +45,14 @@ async def build_context(
         decisions = list(result.scalars().all())
         if decisions:
             lines = [f"[PROJECT: {project_name or project_id}]", "Decisions:"]
+            ids_in_section = []
             for m in decisions:
                 date_str = m.created_at.strftime("%Y-%m-%d") if m.created_at else "?"
                 lines.append(f"  • {m.content} ({m.confidence_label}, {date_str})")
-                memory_ids.append(m.id)
+                ids_in_section.append(m.id)
                 used_ids.add(m.id)
             sections.append("\n".join(lines))
+            section_ids.append(ids_in_section)
 
     # --- Section 2: User preferences ---
     result = await db.execute(
@@ -66,11 +68,13 @@ async def build_context(
     preferences = list(result.scalars().all())
     if preferences:
         lines = ["[YOUR PREFERENCES]"]
+        ids_in_section = []
         for m in preferences:
             lines.append(f"  • {m.content}")
-            memory_ids.append(m.id)
+            ids_in_section.append(m.id)
             used_ids.add(m.id)
         sections.append("\n".join(lines))
+        section_ids.append(ids_in_section)
 
     # --- Section 3: Query-relevant memories ---
     if query and query.strip():
@@ -81,11 +85,13 @@ async def build_context(
             relevant = [r for r in results if r.memory.id not in used_ids]
             if relevant:
                 lines = ["[RELEVANT TO THIS CONVERSATION]"]
+                ids_in_section = []
                 for r in relevant[:5]:
                     lines.append(f"  • ({r.memory.memory_type}) {r.memory.content}")
-                    memory_ids.append(r.memory.id)
+                    ids_in_section.append(r.memory.id)
                     used_ids.add(r.memory.id)
                 sections.append("\n".join(lines))
+                section_ids.append(ids_in_section)
         except Exception:
             pass  # Don't fail context if search fails
 
@@ -106,10 +112,14 @@ async def build_context(
     estimated_tokens = len(block) / 4
     while estimated_tokens > max_tokens and sections:
         sections.pop()
+        section_ids.pop()
         block = "[VICTORIOUS MEMORY — project context and user knowledge]\n\n"
         block += "\n\n".join(sections)
         block += "\n\n[This context is auto-injected by Victorious Memory.]"
         estimated_tokens = len(block) / 4
+
+    # Rebuild memory_ids from remaining sections only
+    memory_ids = [mid for ids in section_ids for mid in ids]
 
     # Update access stats
     if memory_ids:

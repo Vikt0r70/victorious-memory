@@ -27,8 +27,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing database...")
     await init_db()
+    # Seed default agent roles before worker starts
+    from app.database import async_session
+    from app.domains.providers.service import seed_default_agents
+    async with async_session() as session:
+        await seed_default_agents(session)
+        await session.commit()
     logger.info("Database ready. Starting extraction worker...")
     worker_task = asyncio.create_task(extraction_worker())
+
+    # Warm the embedding model in the background so the first search isn't slow
+    async def _warm_model() -> None:
+        try:
+            from app.domains.search.embeddings import embed_text
+            await embed_text("warmup")
+            logger.info("Embedding model warmed up.")
+        except Exception as e:
+            logger.warning("Embedding warmup failed (will lazy-load on demand): %s", e)
+
+    asyncio.create_task(_warm_model())
     logger.info("Victorious Memory API is ready.")
     yield
     # Shutdown
@@ -79,15 +96,6 @@ app.include_router(exchanges_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(system_router, prefix="/api")
-
-
-@app.on_event("startup")
-async def startup():
-    from app.database import async_session
-    from app.domains.providers.service import seed_default_agents
-    async with async_session() as session:
-        await seed_default_agents(session)
-        await session.commit()
 
 
 @app.get("/health")
