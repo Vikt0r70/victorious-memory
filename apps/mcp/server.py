@@ -12,6 +12,14 @@ import os
 from typing import Any
 
 API_BASE = os.environ.get("VICTORIOUS_API_URL", "http://localhost:8080")
+API_KEY = os.environ.get("VICTORIOUS_API_KEY", "")
+
+
+def _headers() -> dict:
+    h = {"Content-Type": "application/json"}
+    if API_KEY:
+        h["X-API-Key"] = API_KEY
+    return h
 
 
 def api(path: str, method: str = "GET", body: dict | None = None, timeout: int = 30) -> dict | None:
@@ -19,7 +27,7 @@ def api(path: str, method: str = "GET", body: dict | None = None, timeout: int =
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(
         url, data=data, method=method,
-        headers={"Content-Type": "application/json"},
+                headers=_headers(),
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:

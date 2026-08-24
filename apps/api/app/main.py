@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.database import init_db
 from app.worker import extraction_worker
 
@@ -67,6 +68,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Access control (no-op when unconfigured, e.g. local dev) ---
+# A request passes if its client IP is trusted OR it carries the right X-API-Key.
+# Behind Cloudflare Tunnel the real client IP arrives in CF-Connecting-IP /
+# X-Forwarded-For; direct LAN clients fall back to the socket address.
+_TRUSTED_IPS = {ip.strip() for ip in settings.memory_trusted_ips.split(",") if ip.strip()}
+
+
+@app.middleware("http")
+async def access_control(request, call_next):
+    path = request.url.path
+    if not settings.memory_api_key and not _TRUSTED_IPS:
+        return await call_next(request)
+    if path == "/health":
+        return await call_next(request)
+
+    client_ip = (
+        request.headers.get("cf-connecting-ip")
+        or (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or None)
+        or (request.client.host if request.client else "")
+    )
+
+    if client_ip and client_ip in _TRUSTED_IPS:
+        return await call_next(request)
+    if settings.memory_api_key and request.headers.get("x-api-key") == settings.memory_api_key:
+        return await call_next(request)
+
+    logger.warning("Rejected request to %s from untrusted source %s", path, client_ip or "unknown")
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": "Unauthorized"}, status_code=403)
 
 # --- Mount all routers ---
 from app.domains.ingest.router import router as ingest_router

@@ -23,6 +23,7 @@ import path from "node:path"
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const API       = process.env.VICTORIOUS_API_URL || "http://localhost:8080"
+const API_KEY   = process.env.VICTORIOUS_API_KEY || ""
 const DEBUG     = process.env.VICTORIOUS_DEBUG === "1"
 // File logging is always on by default — it is the primary evidence trail
 const LOG_FILE  = process.env.VICTORIOUS_LOG_FILE || path.join(os.homedir(), ".victorious", "plugin.log")
@@ -132,7 +133,9 @@ async function api(path, method = "GET", body = null, timeoutMs = TIMEOUT_API_MS
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const opts = { method, headers: { "Content-Type": "application/json" }, signal: controller.signal }
+    const headers = { "Content-Type": "application/json" }
+    if (API_KEY) headers["X-API-Key"] = API_KEY
+    const opts = { method, headers, signal: controller.signal }
     if (body) opts.body = JSON.stringify(body)
     const res = await fetch(`${API}${path}`, opts)
     if (!res.ok) {

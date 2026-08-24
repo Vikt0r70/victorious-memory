@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     api_port: int = 8080
     debug: bool = False
 
+    # Access control (empty = open, fine for localhost-only deployments).
+    # memory_api_key: required X-API-Key header for clients not coming from a trusted IP.
+    # memory_trusted_ips: comma-separated IPs allowed without a key (e.g. your home IP as seen by Cloudflare).
+    memory_api_key: str = ""
+    memory_trusted_ips: str = ""
+
     # Extraction
     extraction_token_threshold: int = 10000  # min tokens accumulated to trigger batch LLM extraction (default 10k)
     extraction_max_retries: int = 3
