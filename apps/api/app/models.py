@@ -264,6 +264,7 @@ class ExtractionJob(Base):
         ARRAY(Text), server_default="{}", default=list
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    kind: Mapped[str] = mapped_column(Text, nullable=False, default="extraction")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

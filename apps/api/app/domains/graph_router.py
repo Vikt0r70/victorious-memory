@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import Memory, MemoryEdge
+from app.domains.edges.service import detect_edges
 
 router = APIRouter(tags=["graph"])
 
@@ -189,3 +190,14 @@ async def delete_edge(edge_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Edge not found")
     await db.delete(edge)
     await db.flush()
+
+
+@router.post("/edges/detect")
+async def run_edge_detection(
+    project_id: str | None = None,
+    max_pairs: int = 200,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run edge detection: find relationships between memories via vector candidates + LLM."""
+    result = await detect_edges(db, project_id=project_id, max_pairs=max_pairs)
+    return result

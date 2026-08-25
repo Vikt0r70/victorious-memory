@@ -14,6 +14,7 @@ from app.database import async_session
 from app.domains.activity import log_activity
 from app.domains.extraction.agent import ExtractionError, extract_memories
 from app.domains.extraction.validator import validate_candidates
+from app.domains.edges.service import detect_edges
 from app.domains.memories.service import (
     create_memory_from_candidate,
     get_memories_by_scope_type,
@@ -92,6 +93,25 @@ async def _process_job(job_id: str) -> None:
             job = await _load_job(db, job_id)
             if not job:
                 logger.error("Job %s not found after claiming", job_id)
+                return
+
+            # Dispatch by job kind — edge_detection runs a different pipeline
+            if job.kind == "edge_detection":
+                logger.info("Job %s: edge_detection pipeline", job_id)
+                result = await detect_edges(db)
+                now_utc = datetime.now(timezone.utc)
+                await db.execute(
+                    update(ExtractionJob)
+                    .where(ExtractionJob.id == job_id)
+                    .values(status="completed", completed_at=now_utc)
+                )
+                await log_activity(
+                    db,
+                    "edge_detection_completed",
+                    f"Edge detection job: {result.get('edges_created', 0)} edges from {result.get('candidates_scanned', 0)} pairs",
+                )
+                await db.commit()
+                logger.info("Job %s completed: edge_detection (%s)", job_id, result)
                 return
 
             # Determine exchange IDs to process
