@@ -413,6 +413,7 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
 
         log.info("Memory injected", {
           memories_used: ctx.memories_used,
+          memory_ids:    ctx.memory_ids,
           project_id:    ctx.project_id,
           chars:         ctx.block.length,
         })
@@ -533,6 +534,26 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
         }
       } catch (e) {
         log.error("session.idle error (contained)", { error: e?.message })
+      }
+    },
+
+    // ── 7. COMPACTION: inject durable memory into continuation summary ──
+    "experimental.session.compacting": async (input, output) => {
+      if (!output?.context) return
+      try {
+        const params = new URLSearchParams({ tokens: "500" })
+        if (projectId) params.set("project_id", projectId)
+        const queryText = currentUser || lastUserMessage
+        if (queryText && !isTrivialMessage(queryText)) {
+          params.set("query", queryText.slice(0, 500))
+        }
+        const ctx = await api(`/api/context?${params}`, "GET", null, TIMEOUT_CONTEXT_MS)
+        if (ctx?.block) {
+          output.context.push(`## Durable Memory (auto-injected)\n${ctx.block}`)
+          log.info("Memory injected into compaction", { memories_used: ctx.memories_used })
+        }
+      } catch (e) {
+        log.error("session.compacting error (contained)", { error: e?.message })
       }
     },
   }

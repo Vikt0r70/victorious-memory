@@ -8,3 +8,4 @@ class ContextResponse(BaseModel):
     memories_used: int
     project_id: str | None
     project_name: str | None
+    memory_ids: list[str] = []

@@ -30,6 +30,29 @@ async def build_context(
     section_ids: list[list[str]] = []  # parallel list: memory IDs per section
     used_ids: set[str] = set()
 
+    # --- Section 0: Pinned core (always-injected high-confidence rules) ---
+    result = await db.execute(
+        select(Memory)
+        .where(
+            Memory.scope == "global",
+            Memory.memory_type.in_(["decision", "preference", "constraint"]),
+            Memory.status == "active",
+            Memory.confidence_label == "high",
+        )
+        .order_by(Memory.confidence_score.desc(), Memory.created_at.asc())
+        .limit(5)
+    )
+    core = list(result.scalars().all())
+    if core:
+        lines = ["[CORE RULES — always apply]"]
+        ids_in_section = []
+        for m in core:
+            lines.append(f"  • ({m.memory_type}) {m.content}")
+            ids_in_section.append(m.id)
+            used_ids.add(m.id)
+        sections.append("\n".join(lines))
+        section_ids.append(ids_in_section)
+
     # --- Section 1: Project decisions ---
     if project_id:
         result = await db.execute(
@@ -39,7 +62,7 @@ async def build_context(
                 Memory.memory_type.in_(["decision", "architecture", "constraint"]),
                 Memory.status == "active",
             )
-            .order_by(Memory.created_at.desc())
+            .order_by(Memory.confidence_score.desc(), Memory.created_at.asc())
             .limit(8)
         )
         decisions = list(result.scalars().all())
@@ -62,7 +85,7 @@ async def build_context(
             Memory.memory_type == "preference",
             Memory.status == "active",
         )
-        .order_by(Memory.access_count.desc())
+        .order_by(Memory.confidence_score.desc(), Memory.created_at.asc())
         .limit(5)
     )
     preferences = list(result.scalars().all())
@@ -102,6 +125,7 @@ async def build_context(
             memories_used=0,
             project_id=project_id,
             project_name=project_name,
+            memory_ids=[],
         )
 
     block = "[VICTORIOUS MEMORY — project context and user knowledge]\n\n"
@@ -138,4 +162,5 @@ async def build_context(
         memories_used=len(memory_ids),
         project_id=project_id,
         project_name=project_name,
+        memory_ids=memory_ids,
     )
