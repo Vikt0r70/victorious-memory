@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 Victorious Memory MCP Server
-Exposes 5 tools for manual memory interaction within OpenCode sessions.
+Exposes 11 tools for manual memory interaction within OpenCode sessions.
 """
 
 import json
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 import os
 from typing import Any
 
@@ -127,6 +128,72 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "approve_memory",
+        "description": "Approve a memory that is in pending_review status. Moves it to active so it becomes available for injection and search.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "The memory ID to approve"},
+            },
+            "required": ["memory_id"],
+        },
+    },
+    {
+        "name": "reject_memory",
+        "description": "Reject a memory that is in pending_review status. Marks it as rejected so it is excluded from search and injection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "The memory ID to reject"},
+            },
+            "required": ["memory_id"],
+        },
+    },
+    {
+        "name": "get_stats",
+        "description": "Get memory system statistics: total memories, by status, by type, by project. Useful for understanding the state of the memory store.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Filter by project (optional)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "trigger_extraction",
+        "description": "Trigger a batch extraction job for a project. This processes unextracted exchanges through the LLM extraction pipeline. Returns the job ID for tracking.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "The project ID to extract memories for"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "run_edge_detection",
+        "description": "Run the edge detection pipeline to discover relationships between memories. Uses vector similarity to find candidate pairs, then an LLM classifies each pair as causes/enables/prevents/supports/contradicts/supersedes. Fills the knowledge graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Limit edge detection to a specific project (optional)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "run_consolidation",
+        "description": "Run the consolidation pipeline: merge near-duplicate memories, detect staleness, demote unused memories. Conservative — nothing is deleted, superseded memories are kept for audit. Improves memory quality over time.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Limit consolidation to a specific project (optional)"},
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -240,19 +307,81 @@ def handle_get_activity(args: dict) -> str:
     return "\n".join(lines)
 
 
+def handle_approve_memory(args: dict) -> str:
+    memory_id = args["memory_id"]
+    result = api(f"/api/memories/{memory_id}/approve", "POST")
+    if not result or "error" in result:
+        return f"Error approving memory: {result}"
+    return f"Memory approved ✅\nID: {result['id']}\nStatus: {result['status']}\nType: {result['memory_type']}"
+
+
+def handle_reject_memory(args: dict) -> str:
+    memory_id = args["memory_id"]
+    result = api(f"/api/memories/{memory_id}/reject", "POST")
+    if not result or "error" in result:
+        return f"Error rejecting memory: {result}"
+    return f"Memory rejected ❌\nID: {result['id']}\nStatus: {result['status']}"
+
+
+def handle_get_stats(args: dict) -> str:
+    path = "/api/memories/stats"
+    if args.get("project_id"):
+        path += f"?project_id={urllib.parse.quote(args['project_id'])}"
+    result = api(path)
+    if not result or "error" in result:
+        return f"Error getting stats: {result}"
+    lines = ["Memory Statistics:\n"]
+    for key, val in sorted(result.items()):
+        lines.append(f"  {key}: {val}")
+    return "\n".join(lines)
+
+
+def handle_trigger_extraction(args: dict) -> str:
+    project_id = args["project_id"]
+    result = api(f"/api/ingest/extract-now?project_id={urllib.parse.quote(project_id)}", "POST")
+    if not result or "error" in result:
+        return f"Error triggering extraction: {result}"
+    return f"Extraction triggered ✅\nJob ID: {result.get('job_id', 'N/A')}\nExchanges queued: {result.get('exchanges_queued', 'N/A')}"
+
+
+def handle_run_edge_detection(args: dict) -> str:
+    path = "/api/edges/detect"
+    if args.get("project_id"):
+        path += f"?project_id={urllib.parse.quote(args['project_id'])}"
+    result = api(path, "POST", timeout=120)
+    if not result or "error" in result:
+        return f"Error running edge detection: {result}"
+    return f"Edge detection complete ✅\nEdges created: {result.get('edges_created', 0)}\nCandidates checked: {result.get('candidates', 0)}"
+
+
+def handle_run_consolidation(args: dict) -> str:
+    path = "/api/consolidation/run"
+    if args.get("project_id"):
+        path += f"?project_id={urllib.parse.quote(args['project_id'])}"
+    result = api(path, "POST", timeout=120)
+    if not result or "error" in result:
+        return f"Error running consolidation: {result}"
+    return f"Consolidation complete ✅\nMerged: {result.get('merged', 0)}\nStaleness-flagged: {result.get('stale_flagged', 0)}\nDemoted: {result.get('demoted', 0)}"
+
+
 HANDLERS = {
-    "search_memories": handle_search_memories,
-    "get_context":     handle_get_context,
-    "save_memory":     handle_save_memory,
-    "list_memories":   handle_list_memories,
-    "get_activity":    handle_get_activity,
+    "search_memories":      handle_search_memories,
+    "get_context":          handle_get_context,
+    "save_memory":           handle_save_memory,
+    "list_memories":        handle_list_memories,
+    "get_activity":         handle_get_activity,
+    "approve_memory":       handle_approve_memory,
+    "reject_memory":        handle_reject_memory,
+    "get_stats":            handle_get_stats,
+    "trigger_extraction":   handle_trigger_extraction,
+    "run_edge_detection":   handle_run_edge_detection,
+    "run_consolidation":    handle_run_consolidation,
 }
 
 
 # ── MCP Main loop ─────────────────────────────────────────────────────────────
 
 def main():
-    import urllib.parse  # needed in handler
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -284,7 +413,6 @@ def main():
                 send_error(msg_id, -32601, f"Unknown tool: {tool_name}")
                 continue
             try:
-                import urllib.parse
                 text = handler(arguments)
                 send_result(msg_id, {
                     "content": [{"type": "text", "text": text}],
