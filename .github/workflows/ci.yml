@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install --user hatchling
+          pip install --user -e apps/api
+      - name: Type check
+        run: |
+          pip install --user pyright
+          pyright apps/api/app
+        continue-on-error: true
+      - name: Run tests
+        run: |
+          cd apps/api && python -m pytest tests/ -v
+        continue-on-error: true
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: cd apps/web && npm ci
+      - name: Type check
+        run: cd apps/web && npx tsc --noEmit
+      - name: Lint
+        run: cd apps/web && npm run lint
+        continue-on-error: true
+      - name: Build
+        run: cd apps/web && npm run build
