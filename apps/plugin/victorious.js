@@ -29,6 +29,23 @@ const DEBUG     = process.env.VICTORIOUS_DEBUG === "1"
 const LOG_FILE  = process.env.VICTORIOUS_LOG_FILE || path.join(os.homedir(), ".victorious", "plugin.log")
 const DISABLED  = process.env.VICTORIOUS_DISABLED === "1"
 
+// Hot-reloadable config file — overrides env so endpoint/key changes never
+// require restarting OpenCode. ~/.victorious/config.json: {"api_url": "...", "api_key": "..."}
+const CONFIG_FILE = path.join(os.homedir(), ".victorious", "config.json")
+let _cfgCache = null
+function loadConfig() {
+  try {
+    const st = fs.statSync(CONFIG_FILE)
+    if (!_cfgCache || st.mtimeMs !== _cfgCache._mtime) {
+      _cfgCache = { _mtime: st.mtimeMs, ...JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) }
+      log.info("Config file loaded — overriding env", { api: _cfgCache.api_url })
+    }
+  } catch { _cfgCache = null }
+  return _cfgCache
+}
+const apiBase = () => loadConfig()?.api_url || API
+const apiKey  = () => loadConfig()?.api_key || API_KEY
+
 const num = (v, d) => { const n = parseInt(v || "", 10); return Number.isFinite(n) && n > 0 ? n : d }
 
 // Minimum estimated tokens for an exchange to be worth extracting
@@ -134,10 +151,11 @@ async function api(path, method = "GET", body = null, timeoutMs = TIMEOUT_API_MS
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const headers = { "Content-Type": "application/json" }
-    if (API_KEY) headers["X-API-Key"] = API_KEY
+    const key = apiKey()
+    if (key) headers["X-API-Key"] = key
     const opts = { method, headers, signal: controller.signal }
     if (body) opts.body = JSON.stringify(body)
-    const res = await fetch(`${API}${path}`, opts)
+    const res = await fetch(`${apiBase()}${path}`, opts)
     if (!res.ok) {
       const text = await res.text().catch(() => "")
       if (res.status >= 500) recordFailure(`HTTP ${res.status}`)
@@ -154,6 +172,7 @@ async function api(path, method = "GET", body = null, timeoutMs = TIMEOUT_API_MS
     if (health.failures <= 1) {
       log.error(`API ${method} ${path} ${aborted ? `timed out after ${timeoutMs}ms` : "network error"}`, {
         error: e?.message,
+        api: apiBase(),
         hint: "memory features degraded; they will resume automatically",
       })
     }
@@ -231,6 +250,19 @@ function isTrivialMessage(text) {
   const trimmed = text.trim()
   if (trimmed.length < 5) return true
   return TRIVIAL_PATTERNS.some(p => p.test(trimmed))
+}
+
+// DCP / compaction-dump artifacts are not real user turns — capturing them as
+// exchanges pollutes the corpus and always yields "0 memories extracted".
+const COMPACTION_MARKERS = [
+  /^\s*📄?\s*DCP\s*\|/i,
+  /^\s*DCP\s*Compression\s*#/i,
+  /\[Compressed conversation section\]/,
+  /^\s*Compression\s*#\d+/i,
+]
+function isCompactionArtifact(text) {
+  if (!text) return false
+  return COMPACTION_MARKERS.some(p => p.test(text.slice(0, 200)))
 }
 
 // ── Project detection from cwd ────────────────────────────────────────────────
@@ -401,6 +433,12 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
 
         // Flush previous exchange detached — never delay the user's message
         if (currentUser || agentParts.length > 0) void flushExchange("new_message")
+
+        // Skip compaction/DCP artifacts — they are not real user turns
+        if (isCompactionArtifact(userContent)) {
+          log.info("Skipping compaction artifact", { len: userContent.length })
+          return
+        }
 
         currentUser       = userContent
         accumulatedTokens = estimateTokens(userContent)
