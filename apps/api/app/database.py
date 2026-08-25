@@ -35,3 +35,9 @@ async def init_db() -> None:
         await conn.execute(
             text("ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS exchange_ids TEXT[] DEFAULT '{}'")
         )
+        # HNSW index for fast cosine similarity search (idempotent — only builds once)
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_memories_embedding_hnsw "
+                 "ON memories USING hnsw (embedding vector_cosine_ops) "
+                 "WITH (m = 16, ef_construction = 64)")
+        )

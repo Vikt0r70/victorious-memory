@@ -125,7 +125,37 @@ async def get_one(memory_id: str, db: AsyncSession = Depends(get_db)):
     return mem
 
 
+@router.post("/audit-embeddings")
+async def audit_embeddings(db: AsyncSession = Depends(get_db)):
+    """Find and re-embed memories with null or all-zero embeddings."""
+    from sqlalchemy import select, update
+    from app.models import Memory
+    from app.domains.search.embeddings import embed_text
 
+    result = await db.execute(
+        select(Memory.id, Memory.content, Memory.embedding).where(Memory.status != "rejected")
+    )
+    rows = result.all()
+
+    zero_ids: list[tuple[str, str]] = []
+    for row in rows:
+        mid, content, embedding = row[0], row[1], row[2]
+        if not embedding or all(v == 0.0 for v in embedding):
+            zero_ids.append((mid, content))
+
+    fixed = 0
+    for mid, content in zero_ids:
+        try:
+            new_embedding = await embed_text(content)
+            await db.execute(
+                update(Memory).where(Memory.id == mid).values(embedding=new_embedding)
+            )
+            fixed += 1
+        except Exception:
+            pass
+
+    await db.flush()
+    return {"audited": len(rows), "zero_vectors_found": len(zero_ids), "re_embedded": fixed}
 @router.post("/search")
 async def search_memories(req: SearchRequest, db: AsyncSession = Depends(get_db)):
     results = await hybrid_search(
