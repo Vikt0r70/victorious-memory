@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Memory, MemoryEdge
 from app.domains.edges.service import detect_edges
+from app.domains.consolidation.service import run_consolidation
 
 router = APIRouter(tags=["graph"])
 
@@ -200,4 +201,14 @@ async def run_edge_detection(
 ):
     """Run edge detection: find relationships between memories via vector candidates + LLM."""
     result = await detect_edges(db, project_id=project_id, max_pairs=max_pairs)
+    return result
+
+
+@router.post("/consolidation/run")
+async def run_consolidation_pipeline(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run consolidation: merge near-dups, sweep stale, demote unused memories."""
+    result = await run_consolidation(db, project_id=project_id)
     return result
