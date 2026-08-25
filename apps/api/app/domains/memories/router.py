@@ -166,6 +166,10 @@ async def search_memories(req: SearchRequest, db: AsyncSession = Depends(get_db)
             {
                 "memory": MemoryResponse.model_validate(r.memory),
                 "score": r.combined_score,
+                "rrf_score": r.rrf_score,
+                "semantic_rank": r.semantic_rank,
+                "bm25_rank": r.bm25_rank,
+                "freshness": r.freshness,
             }
             for r in results
         ]

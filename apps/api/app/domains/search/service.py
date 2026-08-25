@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy import select, text as sa_text
 
@@ -19,13 +20,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SearchResult:
-    """A single search result with component and combined scores."""
+    """A single search result with component scores, RRF fusion, and freshness."""
 
     memory_id: str
     memory: Memory
     semantic_score: float
     bm25_score: float
     combined_score: float
+    rrf_score: float
+    semantic_rank: int
+    bm25_rank: int
+    freshness: float
 
 
 async def hybrid_search(
@@ -46,8 +51,8 @@ async def hybrid_search(
     1. Embed the query text.
     2. pgvector cosine-distance retrieval with filters (top_k * 3 candidates).
     3. BM25 re-rank the candidates.
-    4. Fuse scores: ``combined = 0.7 * semantic + 0.3 * bm25``.
-    5. Return the top *top_k* results sorted by combined score.
+    4. Fuse via Reciprocal Rank Fusion (RRF, k=60) with freshness decay.
+    5. Return the top *top_k* results sorted by combined RRF×freshness score.
     """
     from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
 
@@ -128,22 +133,51 @@ async def hybrid_search(
         len(candidates),
     )
 
-    # Step 4 — fuse scores
+    # Step 4 — RRF (Reciprocal Rank Fusion) + freshness decay
+    RRF_K = 60  # standard constant — balances rank vs score influence
+
+    # Compute ranks for each retrieval method
+    semantic_order = sorted(range(len(candidates)), key=lambda i: candidates[i][1], reverse=True)
+    semantic_ranks = {idx: rank + 1 for rank, idx in enumerate(semantic_order)}
+
+    bm25_order = sorted(bm25_scores.keys(), key=lambda mid: bm25_scores[mid], reverse=True)
+    bm25_ranks = {mid: rank + 1 for rank, mid in enumerate(bm25_order)}
+
+    # Types that represent stable knowledge — never decay with age
+    STABLE_TYPES = {"decision", "preference", "constraint", "architecture", "reference"}
+
+    def _freshness(mem: Memory) -> float:
+        if mem.memory_type in STABLE_TYPES:
+            return 1.0
+        updated = getattr(mem, "updated_at", None)
+        if not updated:
+            return 0.7
+        now = datetime.now(timezone.utc) if updated.tzinfo else datetime.utcnow()
+        days_old = max(0, (now - updated).days)
+        return max(0.5, 1.0 - (days_old / 730.0))
+
     fused: list[SearchResult] = []
-    for memory, semantic_score in candidates:
+    for i, (memory, semantic_score) in enumerate(candidates):
         bm25_score = bm25_scores.get(memory.id, 0.0)
-        combined = 0.7 * semantic_score + 0.3 * bm25_score
+        s_rank = semantic_ranks.get(i, len(candidates))
+        b_rank = bm25_ranks.get(memory.id, len(bm25_ranks) + 1)
+        rrf = (1.0 / (RRF_K + s_rank)) + (1.0 / (RRF_K + b_rank))
+        fresh = _freshness(memory)
+        combined = rrf * fresh
         fused.append(
             SearchResult(
                 memory_id=memory.id,
                 memory=memory,
                 semantic_score=round(semantic_score, 4),
                 bm25_score=round(bm25_score, 4),
-                combined_score=round(combined, 4),
+                combined_score=round(combined, 6),
+                rrf_score=round(rrf, 6),
+                semantic_rank=s_rank,
+                bm25_rank=b_rank,
+                freshness=round(fresh, 4),
             )
         )
 
-    # Step 5 — sort and truncate
     fused.sort(key=lambda r: r.combined_score, reverse=True)
     return fused[:top_k]
 
