@@ -156,11 +156,14 @@ async def validate_candidates(
         scope = _sanitize_scope(candidate.scope)
         score = max(0.0, min(1.0, candidate.confidence_score))
 
-        # Skip empty / too short / single-keyword junk (e.g. "edge-detection")
+        # Skip empty / too short / substanceless (bare tags, file names, single words)
         content = candidate.content.strip()
         word_count = len(content.split())
-        if not content or len(content) < 10 or word_count < 3:
-            logger.info("Skipping trivial candidate (%d words): %s", word_count, content[:60])
+        if not content or len(content) < 40 or word_count < 5:
+            logger.info(
+                "Skipping substanceless candidate (%d chars, %d words): %s",
+                len(content), word_count, content[:60],
+            )
             continue
 
         # Step 2: Confidence label

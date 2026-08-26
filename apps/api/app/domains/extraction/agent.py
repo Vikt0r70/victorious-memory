@@ -101,6 +101,7 @@ def _build_prompt(
 - Actual code content: don't memorize code, only decisions ABOUT code
 - Greetings, meta-conversation: "hello", "thanks", "let me think"
 - Things already known (see below)
+- Bare words, tag names, file paths, or feature names ("consolidation", "edge-detection", "src/app/main.py") — content MUST be a complete standalone statement of at least ~10 words explaining the durable knowledge
 
 ## Scope Rules
 - "project": References project files, architecture, project-specific decisions
