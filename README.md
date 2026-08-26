@@ -45,12 +45,20 @@ docker compose up -d --build
 | API          | 8080  | FastAPI backend + extraction worker  |
 | Web          | 3002  | Next.js dashboard                    |
 | DB           | 5432  | PostgreSQL 16 + pgvector             |
-| MCP Server   | stdio | stdin/stdout JSON-RPC, 5 tools       |
+| MCP Server   | stdio | stdin/stdout JSON-RPC, 11 tools      |
 | Plugin       | —     | OpenCode plugin, auto-capture+inject |
+
+## Memory Pipelines
+
+| Pipeline        | Trigger                    | What it does                                              |
+|-----------------|----------------------------|-----------------------------------------------------------|
+| Extraction      | automatic (threshold) / manual | LLM extracts memories from captured exchanges          |
+| Edge Detection  | `POST /api/edges/detect`   | pgvector candidates → LLM classifies relationships → graph |
+| Consolidation   | `POST /api/consolidation/run` | Near-dup merge, staleness sweep, usage demotion         |
 
 ## Architecture
 
-See [IMPLEMENTATION.md](./IMPLEMENTATION.md) for the full system design.
+See [AGENTS.md](./AGENTS.md) for the full system guide — architecture diagram, memory system usage, and conventions.
 
 ## License
 
