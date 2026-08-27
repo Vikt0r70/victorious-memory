@@ -2,6 +2,8 @@
 
 **A memory system for AI coding agents that actually remembers — without being asked.**
 
+![Victorious Memory Dashboard](docs/assets/dashboard.jpg)
+
 Most AI agent memory systems fail the same way: the agent gets busy, forgets to check memory before acting, forgets to write things down after, and everything useful stays hidden in a database you can't see or edit. Victorious Memory fixes all of that.
 
 - **No "remember this" needed.** The plugin captures every conversation automatically, extracts durable knowledge through LLM pipelines, and injects relevant context back into future sessions — all before the agent starts working.
