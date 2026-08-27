@@ -11,47 +11,6 @@ Most AI agent memory systems fail the same way: the agent gets busy, forgets to 
 - **It's not a black box.** A full web dashboard lets you browse, search, edit, organize, and tune your memory system. See exactly what the agent sees, what got extracted, what's pending review, and what the relationship graph looks like.
 - **It never breaks your workflow.** Circuit breaker, hard timeouts, offline queue — if the backend dies, OpenCode keeps running like nothing happened. Memory resumes automatically when the server comes back.
 
-## How it works
-
-```
-                ┌──────────────────────────────────────────────────┐
-                │                  OpenCode Agent                   │
-                │                                                  │
-   capture ◀─── │  plugin hooks: chat.message, tool.execute,      │
-   (automatic)  │  session.idle, system.transform                  │
-                │                                                  │
-   inject ───▶  │  [VICTORIOUS MEMORY] block in system prompt      │
-   (automatic)  └───────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-        ┌───────────────────────────────────────────────┐
-        │              FastAPI Backend (:8080)            │
-        │                                               │
-        │  /api/ingest ─▶ extraction worker              │
-        │       │  chunked LLM extraction (6K tokens)    │
-        │       │  substance + grounding validation      │
-        │       ▼                                       │
-        │  /api/context ◀─ hybrid search                │
-        │       │  pgvector HNSW + BM25                  │
-        │       │  Reciprocal Rank Fusion (k=60)        │
-        │       │  type-conditioned freshness decay     │
-        │       ▼                                       │
-        │  memories ◀── edges ◀── consolidation          │
-        │               (auto)      (auto)               │
-        └───────────────┬───────────────────────────────┘
-                        │
-                        ▼
-        ┌───────────────────────────────────────┐
-        │         Next.js Dashboard (:3002)      │
-        │                                       │
-        │  Browse, search, edit memories         │
-        │  Review queue (approve/reject)        │
-        │  Jobs + activity timeline              │
-        │  Relationship graph visualization     │
-        │  Provider routing + agent config      │
-        └───────────────────────────────────────┘
-```
-
 ## Why not just use RAG?
 
 | Problem with typical memory systems | How Victorious Memory solves it |
