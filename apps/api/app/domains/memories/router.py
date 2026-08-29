@@ -209,6 +209,20 @@ async def delete(memory_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Memory not found")
 
 
+@router.post("/{memory_id}/pin", response_model=MemoryResponse)
+async def toggle_pin(memory_id: str, db: AsyncSession = Depends(get_db)):
+    mem = await get_memory(db, memory_id)
+    if not mem:
+        raise HTTPException(404, "Memory not found")
+    new_pinned = not mem.pinned
+    updated = await update_memory(db, memory_id, pinned=new_pinned)
+    if not updated:
+        raise HTTPException(404, "Memory not found")
+    action = "pinned" if new_pinned else "unpinned"
+    await log_activity(db, f"memory_{action}", f"{action.capitalize()}: {updated.content[:100]}", memory_id=updated.id)
+    return updated
+
+
 @router.post("/{memory_id}/approve", response_model=MemoryResponse)
 async def approve(memory_id: str, db: AsyncSession = Depends(get_db)):
     mem = await approve_memory(db, memory_id)

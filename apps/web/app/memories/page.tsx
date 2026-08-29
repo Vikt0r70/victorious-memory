@@ -183,11 +183,47 @@ export default function MemoriesPage() {
       enableSorting: false,
     },
     {
+      id: "pin",
+      header: "",
+      cell: ({ row }: { row: any }) => {
+        const isPinned = row.original.pinned;
+        return (
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                const updated = await memoriesApi.pin(row.original.id);
+                setMemories((prev) =>
+                  prev.map((m) => (m.id === row.original.id ? { ...m, pinned: updated.pinned } : m))
+                );
+              } catch (err) {
+                console.error("Pin toggle failed", err);
+              }
+            }}
+            className={`p-1 rounded hover:bg-accent transition-colors cursor-pointer ${
+              isPinned ? "text-amber-400" : "text-muted-foreground/40 hover:text-foreground"
+            }`}
+            title={isPinned ? "Pinned to Core Rules (click to unpin)" : "Pin to Core Rules (always injected)"}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {isPinned ? "push_pin" : "push_pin"}
+            </span>
+          </button>
+        );
+      },
+      enableSorting: false,
+    },
+    {
       accessorKey: "content",
       header: "Content",
       cell: ({ row }: { row: any }) => (
-        <div className="text-[14px] text-foreground truncate max-w-md">
-          {row.original.content}
+        <div className="text-[14px] text-foreground truncate max-w-md flex items-center gap-2">
+          {row.original.pinned && (
+            <span className="text-amber-400 shrink-0 font-bold text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+              Pinned
+            </span>
+          )}
+          <span className="truncate">{row.original.content}</span>
         </div>
       ),
     },

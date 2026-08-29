@@ -56,6 +56,8 @@ export const memoriesApi = {
     }),
   approve: (id: string) =>
     request<any>(`/memories/${id}/approve`, { method: "POST" }),
+  pin: (id: string) =>
+    request<any>(`/memories/${id}/pin`, { method: "POST" }),
   reject: (id: string, reason?: string) =>
     request<any>(`/memories/${id}/reject`, {
       method: "POST",

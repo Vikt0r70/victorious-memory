@@ -22,6 +22,7 @@ class MemoryUpdateRequest(BaseModel):
     confidence_score: float | None = None
     tags: list[str] | None = None
     status: str | None = None
+    pinned: bool | None = None
 
 
 class MemoryResponse(BaseModel):
@@ -43,6 +44,7 @@ class MemoryResponse(BaseModel):
     updated_at: datetime
     last_accessed: datetime | None
     access_count: int
+    pinned: bool = False
 
     model_config = {"from_attributes": True}
 

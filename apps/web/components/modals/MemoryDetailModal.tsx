@@ -36,6 +36,20 @@ export default function MemoryDetailModal({
   const [memory, setMemory] = useState<any>(null);
   const [edges, setEdges] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pinning, setPinning] = useState(false);
+
+  const handleTogglePin = async () => {
+    if (!memory || pinning) return;
+    setPinning(true);
+    try {
+      const updated = await memoriesApi.pin(memory.id);
+      setMemory(updated);
+    } catch (e) {
+      console.error("Failed to toggle pin", e);
+    } finally {
+      setPinning(false);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -98,7 +112,13 @@ export default function MemoryDetailModal({
             </div>
 
             {/* Badges */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+              {memory.pinned && (
+                <span className="badge bg-amber-500/10 border-amber-500/30 text-amber-400 flex items-center gap-1 font-semibold">
+                  <span className="material-symbols-outlined text-[14px]">push_pin</span>
+                  Pinned Core
+                </span>
+              )}
               <span className={`badge border ${TYPE_COLORS[memory.memory_type] || TYPE_COLORS.context}`}>
                 {memory.memory_type}
               </span>
@@ -237,10 +257,25 @@ export default function MemoryDetailModal({
 
             {/* Actions */}
             <div className="flex items-center gap-3 pt-4 border-t border-input sticky bottom-0 bg-card pb-4">
+              <button
+                onClick={handleTogglePin}
+                disabled={pinning}
+                className={`flex-1 px-4 py-2 text-[14px] border rounded-sm transition-colors flex items-center justify-center gap-1 cursor-pointer ${
+                  memory.pinned
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    : "border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+                title={memory.pinned ? "Unpin from Core Rules" : "Pin to Core Rules (Always injected)"}
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {memory.pinned ? "keep_off" : "push_pin"}
+                </span>
+                {memory.pinned ? "Unpin" : "Pin Core"}
+              </button>
               {onEdit && (
                 <button
                   onClick={() => onEdit(memory)}
-                  className="flex-1 px-4 py-2 text-[14px] border border-primary text-primary rounded-sm hover:bg-primary/10 transition-colors flex items-center justify-center gap-1"
+                  className="flex-1 px-4 py-2 text-[14px] border border-primary text-primary rounded-sm hover:bg-primary/10 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">edit</span>
                   Edit
