@@ -44,3 +44,17 @@ async def init_db() -> None:
                  "ON memories USING hnsw (embedding vector_cosine_ops) "
                  "WITH (m = 16, ef_construction = 64)")
         )
+        # B1: pinned column — user-controlled always-on injection slot
+        await conn.execute(
+            text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false")
+        )
+        # B1: Full-Text Search — generated tsvector column + GIN index
+        # Enables true dual-channel search (semantic + FTS in parallel, no gating)
+        await conn.execute(
+            text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS "
+                 "fts_vector tsvector GENERATED ALWAYS AS "
+                 "(to_tsvector('english', content)) STORED")
+        )
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories USING gin(fts_vector)")
+        )

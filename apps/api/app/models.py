@@ -133,6 +133,9 @@ class Memory(Base):
         Text, ForeignKey("memories.id"), nullable=True
     )
 
+    # Pinned — user-controlled always-on injection slot (dashboard toggle)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Vector embedding
     embedding = mapped_column(Vector(384), nullable=True)
 

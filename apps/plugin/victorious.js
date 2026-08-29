@@ -33,6 +33,7 @@ const DISABLED  = process.env.VICTORIOUS_DISABLED === "1"
 // require restarting OpenCode. ~/.victorious/config.json: {"api_url": "...", "api_key": "..."}
 const CONFIG_FILE = path.join(os.homedir(), ".victorious", "config.json")
 let _cfgCache = null
+let _cfgErrLogged = false
 function loadConfig() {
   try {
     const st = fs.statSync(CONFIG_FILE)
@@ -40,7 +41,13 @@ function loadConfig() {
       _cfgCache = { _mtime: st.mtimeMs, ...JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) }
       log.info("Config file loaded — overriding env", { api: _cfgCache.api_url })
     }
-  } catch { _cfgCache = null }
+  } catch (e) {
+    if (!_cfgErrLogged) {
+      _cfgErrLogged = true
+      log.error("Config file load failed", { path: CONFIG_FILE, error: e?.message })
+    }
+    _cfgCache = null
+  }
   return _cfgCache
 }
 const apiBase = () => loadConfig()?.api_url || API
@@ -55,7 +62,7 @@ const TOKEN_THRESHOLD = num(process.env.VICTORIOUS_TOKEN_THRESHOLD, 1500)
 // Max tokens of memory context to inject into the system prompt
 const INJECT_TOKENS   = num(process.env.VICTORIOUS_INJECT_TOKENS, 1500)
 // Hard cap on buffered exchange size before an immediate flush fires
-const MAX_EXCHANGE_TOKENS = num(process.env.VICTORIOUS_MAX_EXCHANGE_TOKENS, 20000)
+const MAX_EXCHANGE_TOKENS = num(process.env.VICTORIOUS_MAX_EXCHANGE_TOKENS, 3000)
 
 // Network timeouts (ms) — hard ceilings so a dead/hung backend can never hang OpenCode
 const TIMEOUT_API_MS     = num(process.env.VICTORIOUS_TIMEOUT_MS, 4000)
@@ -265,6 +272,23 @@ function isCompactionArtifact(text) {
   return COMPACTION_MARKERS.some(p => p.test(text.slice(0, 200)))
 }
 
+/**
+ * A4+A5: Strip code/tool noise from a user message before using it as a
+ * semantic search query. Code blocks and raw tool output muddy the embedding
+ * vector, causing the query to match "code" instead of "intent".
+ */
+function stripQueryNoise(text) {
+  if (!text) return text
+  return text
+    // Remove fenced code blocks (``` ... ```)
+    .replace(/```[\s\S]*?```/g, " ")
+    // Remove inline code spans
+    .replace(/`[^`]+`/g, " ")
+    // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 // ── Project detection from cwd ────────────────────────────────────────────────
 
 function detectProjectFromCwd() {
@@ -400,7 +424,7 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
 
         const queryText = currentUser || lastUserMessage
         if (queryText && !isTrivialMessage(queryText)) {
-          params.set("query", queryText.slice(0, 500))
+          params.set("query", stripQueryNoise(queryText).slice(0, 300))
         }
 
         const ctx = await api(`/api/context?${params}`, "GET", null, TIMEOUT_CONTEXT_MS)
@@ -545,7 +569,7 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
         if (projectId) params.set("project_id", projectId)
         const queryText = currentUser || lastUserMessage
         if (queryText && !isTrivialMessage(queryText)) {
-          params.set("query", queryText.slice(0, 500))
+          params.set("query", stripQueryNoise(queryText).slice(0, 300))
         }
         const ctx = await api(`/api/context?${params}`, "GET", null, TIMEOUT_CONTEXT_MS)
         if (ctx?.block) {
