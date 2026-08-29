@@ -10,14 +10,28 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import os
+from pathlib import Path
 from typing import Any
 
-API_BASE = os.environ.get("VICTORIOUS_API_URL", "http://localhost:8080")
-API_KEY = os.environ.get("VICTORIOUS_API_KEY", "")
+# Resolve configuration: Config file > Environment variables > Fallback
+CONFIG_FILE = Path.home() / ".victorious" / "config.json"
+_file_cfg = {}
+if CONFIG_FILE.exists():
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            _file_cfg = json.load(f)
+    except Exception:
+        pass
+
+API_BASE = _file_cfg.get("api_url") or os.environ.get("VICTORIOUS_API_URL", "https://memory.damra.co")
+API_KEY = _file_cfg.get("api_key") or os.environ.get("VICTORIOUS_API_KEY", "")
 
 
 def _headers() -> dict:
-    h = {"Content-Type": "application/json"}
+    h = {
+        "Content-Type": "application/json",
+        "User-Agent": "Victorious-MCP/1.0",
+    }
     if API_KEY:
         h["X-API-Key"] = API_KEY
     return h
