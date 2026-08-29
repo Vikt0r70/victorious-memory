@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.extraction.schemas import ValidatedCandidate
 from app.domains.search.embeddings import embed_text
-from app.models import Exchange, Memory
+from app.models import Exchange, Memory, Project
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,37 @@ async def create_memory_manual(
     except Exception:
         embedding = None
 
+    # Verify project exists if provided; auto-detect / auto-create or fall back gracefully
+    resolved_project_id = None
+    if project_id:
+        proj_slug = project_id.strip()
+        # Direct lookup (case-sensitive and lowercase)
+        proj_res = await db.execute(
+            select(Project.id).where(
+                (Project.id == proj_slug) | (Project.id == proj_slug.lower()) | (func.lower(Project.display_name) == proj_slug.lower())
+            )
+        )
+        found = proj_res.scalar_one_or_none()
+        if found:
+            resolved_project_id = found
+        else:
+            # Auto-create the project so foreign key constraint never fails
+            new_proj = Project(
+                id=proj_slug.lower(),
+                display_name=proj_slug,
+                workspace_path=f"manual/{proj_slug.lower()}",
+                tech_stack=[],
+            )
+            db.add(new_proj)
+            await db.flush()
+            resolved_project_id = new_proj.id
+
     memory = Memory(
         id=Memory.new_id(),
         content=content,
         memory_type=memory_type,
         scope=scope,
-        project_id=project_id,
+        project_id=resolved_project_id,
         confidence_score=confidence_score,
         confidence_label=_confidence_label(confidence_score),
         status="active",
