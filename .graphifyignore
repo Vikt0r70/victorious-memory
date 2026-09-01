@@ -1,0 +1,39 @@
+# Graphify exclusions — exclude noise from knowledge graph generation
+# Patterns follow .gitignore syntax
+
+# Boilerplate assets
+apps/web/public/*.svg
+*.ico
+
+# Alembic migrations (auto-generated, no architectural value)
+apps/api/alembic/
+
+# Build artifacts
+.next/
+node_modules/
+__pycache__/
+.pytest_cache/
+
+# Config/data files (contain no code architecture)
+.env
+.env.example
+.encryption_key
+*.log
+*.dump
+*.lock
+
+# Test fixtures and mocks (low architectural signal)
+apps/api/tests/fixtures/
+apps/web/tests/
+
+# Presentation junk
+*-pres.txt
+badge-*.html
+badge-*.txt
+console.error*
+
+# Internal improvement research (not production code)
+docs/ideas/
+
+# Graphify output (don't re-index your own output)
+graphify-out/
