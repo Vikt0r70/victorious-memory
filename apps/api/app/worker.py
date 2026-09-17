@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text, update
+from sqlalchemy import desc, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -22,7 +22,13 @@ from app.domains.memories.service import (
     get_recent_memories,
 )
 from app.domains.projects.service import get_project
-from app.models import Exchange, ExtractionJob
+from app.models import ActivityLog, Exchange, ExtractionJob
+
+
+MAINTENANCE_KINDS = {
+    "edge_detection": "edge_detection_completed",
+    "consolidation": "consolidation_completed",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +85,68 @@ async def _claim_next_job() -> str | None:
         row = result.fetchone()
         await db.commit()
         return row[0] if row else None
+
+
+async def _enqueue_maintenance_job(kind: str, interval: float) -> bool:
+    """Queue a maintenance job when its interval has elapsed."""
+    event_type = MAINTENANCE_KINDS[kind]
+    now = datetime.now(timezone.utc)
+
+    async with async_session() as db:
+        active_result = await db.execute(
+            select(ExtractionJob.id)
+            .where(
+                ExtractionJob.kind == kind,
+                ExtractionJob.status.in_(["pending", "processing"]),
+            )
+            .limit(1)
+        )
+        if active_result.scalar_one_or_none():
+            return False
+
+        latest_job_result = await db.execute(
+            select(ExtractionJob.created_at)
+            .where(ExtractionJob.kind == kind)
+            .order_by(desc(ExtractionJob.created_at))
+            .limit(1)
+        )
+        latest_job_at = latest_job_result.scalar_one_or_none()
+
+        latest_activity_result = await db.execute(
+            select(ActivityLog.created_at)
+            .where(ActivityLog.event_type == event_type)
+            .order_by(desc(ActivityLog.created_at))
+            .limit(1)
+        )
+        latest_activity_at = latest_activity_result.scalar_one_or_none()
+
+        latest_run_at = max(
+            (timestamp for timestamp in (latest_job_at, latest_activity_at) if timestamp),
+            default=None,
+        )
+        if latest_run_at and (now - latest_run_at).total_seconds() < interval:
+            return False
+
+        latest_exchange_result = await db.execute(
+            select(Exchange.id).order_by(desc(Exchange.created_at)).limit(1)
+        )
+        exchange_id = latest_exchange_result.scalar_one_or_none()
+        if not exchange_id:
+            return False
+
+        db.add(
+            ExtractionJob(
+                id=ExtractionJob.new_id(),
+                exchange_id=exchange_id,
+                exchange_ids=[],
+                kind=kind,
+                status="pending",
+                max_attempts=settings.extraction_max_retries,
+            )
+        )
+        await db.commit()
+        logger.info("Queued %s maintenance job", kind)
+        return True
 
 
 async def _load_job(db: AsyncSession, job_id: str) -> ExtractionJob | None:
@@ -274,3 +342,24 @@ async def extraction_worker() -> None:
         except Exception as exc:
             logger.error("Worker loop error: %s", exc)
             await asyncio.sleep(settings.extraction_poll_interval)
+
+
+async def maintenance_worker() -> None:
+    """Periodically enqueue graph and memory-maintenance jobs."""
+    logger.info(
+        "Maintenance scheduler started (edge=%.0fs, consolidation=%.0fs)",
+        settings.edge_detection_interval,
+        settings.consolidation_interval,
+    )
+
+    while True:
+        try:
+            await _enqueue_maintenance_job(
+                "edge_detection", settings.edge_detection_interval
+            )
+            await _enqueue_maintenance_job(
+                "consolidation", settings.consolidation_interval
+            )
+        except Exception as exc:
+            logger.error("Maintenance scheduler error: %s", exc)
+        await asyncio.sleep(settings.maintenance_poll_interval)

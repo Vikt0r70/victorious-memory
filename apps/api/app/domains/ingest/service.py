@@ -20,11 +20,16 @@ from app.models import AppSetting, Exchange, ExtractionJob, Project
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_text(value: str) -> str:
+    """Remove PostgreSQL-incompatible NUL bytes from incoming text."""
+    return value.replace("\x00", "")
+
+
 def _normalize_paths(paths: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for p in paths:
-        normed = p.replace("\\", "/")
+        normed = _sanitize_text(p).replace("\\", "/")
         if normed not in seen:
             seen.add(normed)
             result.append(normed)
@@ -103,21 +108,28 @@ async def ingest_exchange(
     db: AsyncSession, request: IngestRequest
 ) -> IngestResponse:
     """Store conversation exchange and trigger batch extraction if token threshold is met."""
+    project_id = _sanitize_text(request.project_id) if request.project_id else None
+    session_id = _sanitize_text(request.session_id)
+    user_content = _sanitize_text(request.exchange.user)
+    agent_parts = [
+        {key: _sanitize_text(value) for key, value in part.model_dump().items()}
+        for part in request.exchange.agent_parts
+    ]
     file_paths = _normalize_paths(request.exchange.file_paths)
 
     # Ensure project exists if project_id is supplied
     valid_project_id = None
-    if request.project_id:
-        res = await db.execute(select(Project).where(Project.id == request.project_id))
+    if project_id:
+        res = await db.execute(select(Project).where(Project.id == project_id))
         proj = res.scalar_one_or_none()
         if proj:
             valid_project_id = proj.id
         else:
             # Auto-create project record to satisfy FK constraint
             new_proj = Project(
-                id=request.project_id,
-                display_name=request.project_id.replace("-", " ").title(),
-                workspace_path=request.project_id,
+                id=project_id,
+                display_name=project_id.replace("-", " ").title(),
+                workspace_path=project_id,
                 tech_stack=[],
             )
             db.add(new_proj)
@@ -127,10 +139,10 @@ async def ingest_exchange(
     # Store exchange in PostgreSQL (with extracted_at=None)
     exchange = Exchange(
         id=Exchange.new_id(),
-        session_id=request.session_id,
+        session_id=session_id,
         project_id=valid_project_id,
-        user_content=request.exchange.user,
-        agent_parts=[p.model_dump() for p in request.exchange.agent_parts],
+        user_content=user_content,
+        agent_parts=agent_parts,
         file_paths=file_paths,
         extracted_at=None,
     )

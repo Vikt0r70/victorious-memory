@@ -175,13 +175,13 @@ Memory pairs:
             Memory.memory_type.in_(DECAYABLE_TYPES),
             Memory.updated_at < stale_cutoff,
         )
-        .values(status="needs_review")
+        .values(status="pending_review")
         .returning(Memory.id)
     )
     stale_ids = [r[0] for r in stale_result.fetchall()]
     stats["stale_demoted"] = len(stale_ids)
     if stale_ids:
-        logger.info("Consolidation: %d stale memories demoted to needs_review", len(stale_ids))
+        logger.info("Consolidation: %d stale memories demoted to pending_review", len(stale_ids))
 
     # ── Sweep 3: Usage demotion — never-injected > 30 days ──────────────
     usage_cutoff = datetime.now(timezone.utc) - timedelta(days=USAGE_DEMOTE_DAYS)
@@ -193,18 +193,18 @@ Memory pairs:
             Memory.created_at < usage_cutoff,
             ~Memory.memory_type.in_(STABLE_TYPES),
         )
-        .values(status="needs_review")
+        .values(status="pending_review")
         .returning(Memory.id)
     )
     unused_ids = [r[0] for r in unused_result.fetchall()]
     stats["unused_demoted"] = len(unused_ids)
     if unused_ids:
-        logger.info("Consolidation: %d unused memories demoted to needs_review", len(unused_ids))
+        logger.info("Consolidation: %d unused memories demoted to pending_review", len(unused_ids))
 
     await log_activity(
         db,
         "consolidation_completed",
-        f"Consolidation: {stats['merged']} merged, {stats['stale_demoted']} stale, {stats['unused_demoted']} unused → needs_review",
+        f"Consolidation: {stats['merged']} merged, {stats['stale_demoted']} stale, {stats['unused_demoted']} unused → pending_review",
         project_id=project_id,
     )
     await db.commit()

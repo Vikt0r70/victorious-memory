@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.worker import extraction_worker
+from app.worker import extraction_worker, maintenance_worker
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
         await session.commit()
     logger.info("Database ready. Starting extraction worker...")
     worker_task = asyncio.create_task(extraction_worker())
+    maintenance_task = asyncio.create_task(maintenance_worker())
 
     # Warm the embedding model in the background so the first search isn't slow
     async def _warm_model() -> None:
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     worker_task.cancel()
+    maintenance_task.cancel()
     logger.info("Victorious Memory API shutting down.")
 
 

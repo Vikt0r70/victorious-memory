@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     extraction_poll_interval: float = 2.0  # seconds between queue polls
     extraction_chunk_tokens: int = 6000  # max estimated conversation tokens per LLM call (keeps prompts under provider TPM limits)
 
+    # Memory maintenance
+    maintenance_poll_interval: float = 60.0  # seconds between maintenance scheduling checks
+    edge_detection_interval: float = 21600.0  # six hours
+    consolidation_interval: float = 86400.0  # one day
+
     # LLM calls
     llm_timeout_seconds: int = 120  # per-completion timeout — large extraction prompts need well over 30s
 
