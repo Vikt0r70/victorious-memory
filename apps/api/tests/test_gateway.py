@@ -165,6 +165,7 @@ class TestGatewayCompletion:
         call_kwargs = mock_acomp.call_args.kwargs
         assert call_kwargs["model"] == "openai/gemini-3.8-flash-high"
         assert call_kwargs["extra_headers"] == {
+            "sleev-harness": "opencode",
             "sleev-base-url": "http://127.0.0.1:8045/v1",
         }
 

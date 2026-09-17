@@ -172,6 +172,7 @@ class ProviderGateway:
                 extra_headers = None
                 if provider.provider_type == "antigravity":
                     extra_headers = {
+                        "sleev-harness": "opencode",
                         "sleev-base-url": "http://127.0.0.1:8045/v1",
                     }
 
