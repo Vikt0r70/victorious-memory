@@ -58,6 +58,7 @@ LITELLM_PREFIX: dict[str, str] = {
     "openrouter": "openai",   # OpenRouter endpoints are OpenAI-compatible
     "opencode": "openai",     # OpenCode proxy is OpenAI-compatible
     "custom": "openai",       # Custom endpoints are OpenAI-compatible
+    "antigravity": "openai",  # Local Antigravity/Sleev gateway
 }
 
 
@@ -168,6 +169,11 @@ class ProviderGateway:
                 )
                 model_str = format_litellm_model(provider.provider_type, provider.model)
                 api_base = provider.base_url.rstrip("/") if provider.base_url else None
+                extra_headers = None
+                if provider.provider_type == "antigravity":
+                    extra_headers = {
+                        "sleev-base-url": "http://127.0.0.1:8045/v1",
+                    }
 
                 # Anthropic doesn't support openai-style response_format={"type": "json_object"}
                 actual_response_format = response_format
@@ -183,6 +189,7 @@ class ProviderGateway:
                     temperature=temperature,
                     max_tokens=max_tokens or provider.max_tokens or 4096,
                     response_format=actual_response_format,
+                    extra_headers=extra_headers,
                     num_retries=0,
                     timeout=effective_timeout,
                 )

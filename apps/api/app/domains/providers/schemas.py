@@ -16,6 +16,7 @@ ProviderType = Literal[
     "groq",
     "ollama",
     "custom",
+    "antigravity",
 ]
 
 

@@ -150,6 +150,24 @@ class TestGatewayCompletion:
         call_kwargs = mock_acomp.call_args.kwargs
         assert call_kwargs.get("api_base") is None
 
+    @pytest.mark.asyncio
+    async def test_antigravity_passes_sleev_base_url_header(self, gateway):
+        """Antigravity requests must identify the local Sleev backend."""
+        provider = _make_provider(provider_type="antigravity", model="gemini-3.8-flash-high")
+        fake_response = _fake_model_response()
+
+        with patch.object(gateway, "_resolve_chain", new_callable=AsyncMock, return_value=[provider]):
+            with patch("app.domains.providers.gateway.litellm.acompletion", new_callable=AsyncMock, return_value=fake_response) as mock_acomp:
+                with patch("app.domains.providers.gateway.async_session", return_value=_mock_async_session()):
+                    with patch("app.domains.providers.gateway.decrypt_api_key", return_value="plain-key"):
+                        await gateway._complete_model("planner", messages=[{"role": "user", "content": "hi"}])
+
+        call_kwargs = mock_acomp.call_args.kwargs
+        assert call_kwargs["model"] == "openai/gemini-3.8-flash-high"
+        assert call_kwargs["extra_headers"] == {
+            "sleev-base-url": "http://127.0.0.1:8045/v1",
+        }
+
 
 class TestGatewayBackwardCompat:
     """Tests for the backward-compatible complete() method."""
