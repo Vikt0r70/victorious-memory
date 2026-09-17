@@ -12,6 +12,9 @@ export default function ProjectDetailPage() {
   const [timeline, setTimeline] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ display_name: "", workspace_path: "" });
 
   useEffect(() => {
     async function load() {
@@ -22,7 +25,8 @@ export default function ProjectDetailPage() {
           projectsApi.timeline(id),
           memoriesApi.stats(id),
         ]);
-        setProject(p);
+          setProject(p);
+          setForm({ display_name: p.display_name || "", workspace_path: p.workspace_path || "" });
         setMemories(m.items || []);
         setTimeline(t.items || []);
         setStats(s);
@@ -41,6 +45,19 @@ export default function ProjectDetailPage() {
     window.location.href = "/projects";
   };
 
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = await projectsApi.update(id, form);
+      setProject(updated);
+      setEditing(false);
+    } catch (e: any) {
+      alert(e?.message || "Could not update project");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -49,8 +66,22 @@ export default function ProjectDetailPage() {
           <span className="material-symbols-outlined">arrow_back</span>
         </Link>
         <div>
-          <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">{project.display_name}</h1>
-          <div className="font-mono text-[13px] text-muted-foreground">{project.workspace_path}</div>
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              <input className="bg-card border border-border rounded-md px-3 py-2 text-[18px] font-semibold" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+              <input className="bg-card border border-border rounded-md px-3 py-2 text-[13px] font-mono w-[min(640px,80vw)]" value={form.workspace_path} onChange={(e) => setForm({ ...form, workspace_path: e.target.value })} placeholder="Workspace path" />
+              <div className="flex gap-2">
+                <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-[13px]">{saving ? "Saving..." : "Save"}</button>
+                <button onClick={() => setEditing(false)} className="px-3 py-1.5 border border-border rounded-md text-[13px]">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-[30px] leading-[38px] font-semibold tracking-tight">{project.display_name}</h1>
+              <div className="font-mono text-[13px] text-muted-foreground">{project.workspace_path}</div>
+              <button onClick={() => setEditing(true)} className="mt-2 text-[13px] text-primary font-semibold">Edit project</button>
+            </>
+          )}
         </div>
       </div>
 

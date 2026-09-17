@@ -69,7 +69,7 @@ export const memoriesApi = {
 export const projectsApi = {
   list: () => request<any>("/projects"),
   get: (id: string) => request<any>(`/projects/${id}`),
-  update: (id: string, data: any) =>
+  update: (id: string, data: { display_name?: string; workspace_path?: string; tech_stack?: string[] }) =>
     request<any>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string, cascade = false) =>
     request<void>(`/projects/${id}?cascade=${cascade}`, { method: "DELETE" }),

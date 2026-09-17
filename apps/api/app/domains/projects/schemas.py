@@ -13,6 +13,7 @@ class ProjectDetectRequest(BaseModel):
 
 class ProjectUpdateRequest(BaseModel):
     display_name: str | None = None
+    workspace_path: str | None = None
     tech_stack: list[str] | None = None
 
 

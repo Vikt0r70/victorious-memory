@@ -291,17 +291,20 @@ function stripQueryNoise(text) {
 
 // ── Project detection from cwd ────────────────────────────────────────────────
 
-function detectProjectFromCwd() {
+function detectProjectPath(directory, worktree) {
   try {
-    return process.cwd().replace(/\\/g, "/")
+    return (worktree || directory || process.cwd()).replace(/\\/g, "/")
   } catch {
     return null
   }
 }
 
-async function ensureProject(pathArg) {
+async function ensureProject(pathArg, worktree) {
   if (!pathArg) return null
-  const result = await api("/api/projects/detect", "POST", { path: pathArg }, TIMEOUT_API_MS)
+  const result = await api("/api/projects/detect", "POST", {
+    path: pathArg,
+    worktree: worktree || pathArg,
+  }, TIMEOUT_API_MS)
   return result?.id || null
 }
 
@@ -392,7 +395,7 @@ function maybeCapFlush(reason) {
 
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
-export const VictoriousMemoryPlugin = async ({ client }) => {
+export const VictoriousMemoryPlugin = async ({ client, directory, worktree }) => {
   if (DISABLED) {
     log.info("Plugin disabled via VICTORIOUS_DISABLED")
     return {}
@@ -400,9 +403,9 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
 
   // Never await the network during plugin load — OpenCode blocks on plugin init.
   try {
-    projectPath = detectProjectFromCwd()
+    projectPath = detectProjectPath(directory, worktree)
     sessionId   = `opencode-${Date.now()}`
-    void ensureProject(projectPath)
+    void ensureProject(projectPath, worktree)
       .then(id => {
         projectId = id
         log.info("Plugin initialized", {
@@ -531,10 +534,10 @@ export const VictoriousMemoryPlugin = async ({ client }) => {
       try {
         if (currentUser || agentParts.length > 0) void flushExchange("session_end")
 
-        const newPath = detectProjectFromCwd()
+        const newPath = detectProjectPath(directory, worktree)
         if (newPath !== projectPath || !projectId) {
           projectPath = newPath
-          void ensureProject(newPath)
+          void ensureProject(newPath, worktree)
             .then(id => {
               projectId = id
               log.info("Project detected", { projectPath, projectId })

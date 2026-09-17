@@ -55,7 +55,12 @@ async def update(
     req: ProjectUpdateRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    project = await update_project(db, project_id, req.display_name, req.tech_stack)
+    try:
+        project = await update_project(
+            db, project_id, req.display_name, req.workspace_path, req.tech_stack
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     if not project:
         raise HTTPException(404, "Project not found")
     return project
