@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
+from app.config import settings
 from app.domains.extraction.schemas import MemoryCandidate
 from app.domains.providers.gateway import gateway
 from app.models import Exchange, Memory, Project
@@ -44,6 +45,17 @@ def _format_agent_parts(parts: list[dict]) -> str:
     return "\n\n".join(lines) if lines else "(empty)"
 
 
+def _truncate_for_prompt(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    head = max_chars * 2 // 3
+    tail = max_chars - head
+    return (
+        f"{text[:head]}\n\n[conversation content truncated for prompt size]\n\n"
+        f"{text[-tail:]}"
+    )
+
+
 def _format_conversation(exchanges: list[Exchange]) -> str:
     """Format single or multi-turn batch exchanges chronologically."""
     if not exchanges:
@@ -51,17 +63,22 @@ def _format_conversation(exchanges: list[Exchange]) -> str:
     if len(exchanges) == 1:
         exc = exchanges[0]
         parts = _format_agent_parts(exc.agent_parts or [])
+        user_text = _truncate_for_prompt(
+            exc.user_content or "(empty)", settings.extraction_max_exchange_chars
+        )
         return (
             f"Session: {exc.session_id}\n"
             f"Time: {exc.created_at}\n\n"
-            f"User: {exc.user_content or '(empty)'}\n\n"
+            f"User: {user_text}\n\n"
             f"Agent:\n{parts}"
         )
 
     sections = []
     for idx, exc in enumerate(exchanges, 1):
         parts = _format_agent_parts(exc.agent_parts or [])
-        user_text = exc.user_content or "(empty)"
+        user_text = _truncate_for_prompt(
+            exc.user_content or "(empty)", settings.extraction_max_exchange_chars
+        )
         sections.append(
             f"--- Turn {idx} (Session: {exc.session_id}, Time: {exc.created_at}) ---\n"
             f"User: {user_text}\n\n"

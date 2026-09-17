@@ -16,6 +16,7 @@ from app.domains.extraction.agent import ExtractionError, extract_memories
 from app.domains.extraction.validator import validate_candidates
 from app.domains.edges.service import detect_edges
 from app.domains.consolidation.service import run_consolidation
+from app.domains.ingest.service import get_extraction_token_threshold
 from app.domains.memories.service import (
     create_memory_from_candidate,
     get_memories_by_scope_type,
@@ -35,9 +36,13 @@ logger = logging.getLogger(__name__)
 
 def _estimate_exchange_tokens(exc: Exchange) -> int:
     """Rough token estimate (~4 chars/token) for an exchange's content."""
-    chars = len(exc.user_content or "")
+    chars = min(
+        len(exc.user_content or ""),
+        settings.extraction_max_exchange_chars,
+    )
     for part in exc.agent_parts or []:
-        chars += len(part.get("content", "") if isinstance(part, dict) else "")
+        content = part.get("content", "") if isinstance(part, dict) else ""
+        chars += min(len(content), settings.extraction_max_exchange_chars)
     return chars // 4 + 32
 
 
@@ -66,6 +71,34 @@ def _chunk_exchanges(exchanges: list[Exchange], token_budget: int) -> list[list[
 async def _claim_next_job() -> str | None:
     """Claim the next pending job. Returns the job ID or None."""
     async with async_session() as db:
+        stale_seconds = settings.extraction_stale_job_seconds
+        await db.execute(
+            text("""
+                UPDATE extraction_jobs
+                SET status = 'pending',
+                    started_at = NULL,
+                    retry_after = NOW(),
+                    error = 'Recovered after worker restart or timeout'
+                WHERE status = 'processing'
+                  AND started_at IS NOT NULL
+                  AND started_at < NOW() - (:stale_seconds * INTERVAL '1 second')
+                  AND attempts < max_attempts
+            """),
+            {"stale_seconds": stale_seconds},
+        )
+        await db.execute(
+            text("""
+                UPDATE extraction_jobs
+                SET status = 'failed',
+                    completed_at = NOW(),
+                    error = 'Exceeded retry limit while processing'
+                WHERE status = 'processing'
+                  AND started_at IS NOT NULL
+                  AND started_at < NOW() - (:stale_seconds * INTERVAL '1 second')
+                  AND attempts >= max_attempts
+            """),
+            {"stale_seconds": stale_seconds},
+        )
         result = await db.execute(
             text("""
                 UPDATE extraction_jobs
@@ -85,6 +118,50 @@ async def _claim_next_job() -> str | None:
         row = result.fetchone()
         await db.commit()
         return row[0] if row else None
+
+
+async def _enqueue_extraction_backlog() -> bool:
+    """Queue buffered exchanges after a prior job failed or a restart interrupted it."""
+    async with async_session() as db:
+        active_result = await db.execute(
+            select(ExtractionJob.id).where(
+                ExtractionJob.kind == "extraction",
+                ExtractionJob.status.in_(["pending", "processing"]),
+            ).limit(1)
+        )
+        if active_result.scalar_one_or_none():
+            return False
+
+        result = await db.execute(
+            select(Exchange)
+            .where(Exchange.extracted_at.is_(None))
+            .order_by(Exchange.created_at.asc())
+        )
+        exchanges = list(result.scalars().all())
+        if not exchanges:
+            return False
+
+        accumulated_tokens = sum(_estimate_exchange_tokens(exchange) for exchange in exchanges)
+        threshold = await get_extraction_token_threshold(db)
+        if accumulated_tokens < threshold:
+            return False
+
+        job = ExtractionJob(
+            id=ExtractionJob.new_id(),
+            exchange_id=exchanges[-1].id,
+            exchange_ids=[exchange.id for exchange in exchanges],
+            kind="extraction",
+            status="pending",
+            max_attempts=settings.extraction_max_retries,
+        )
+        db.add(job)
+        await db.commit()
+        logger.info(
+            "Queued extraction backlog: %d exchanges (~%d tokens)",
+            len(exchanges),
+            accumulated_tokens,
+        )
+        return True
 
 
 async def _enqueue_maintenance_job(kind: str, interval: float) -> bool:
@@ -354,6 +431,7 @@ async def maintenance_worker() -> None:
 
     while True:
         try:
+            await _enqueue_extraction_backlog()
             await _enqueue_maintenance_job(
                 "edge_detection", settings.edge_detection_interval
             )

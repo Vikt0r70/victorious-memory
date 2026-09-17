@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     extraction_max_retries: int = 3
     extraction_poll_interval: float = 2.0  # seconds between queue polls
     extraction_chunk_tokens: int = 6000  # max estimated conversation tokens per LLM call (keeps prompts under provider TPM limits)
+    extraction_max_exchange_chars: int = 12000  # bound one exchange's prompt representation without changing stored data
+    extraction_stale_job_seconds: float = 1800.0  # reclaim jobs stranded by a worker restart
 
     # Memory maintenance
     maintenance_poll_interval: float = 60.0  # seconds between maintenance scheduling checks

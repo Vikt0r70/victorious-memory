@@ -6,6 +6,8 @@ import pytest
 
 from app import worker
 from app.domains.ingest.service import _normalize_paths, _sanitize_text
+from app.domains.extraction.agent import _format_conversation
+from app.models import Exchange
 
 
 class _ScalarResult:
@@ -28,6 +30,31 @@ def test_normalize_paths_removes_nul_bytes_and_normalizes_separators():
     assert _normalize_paths(["C:\\work\x00\\app", "C:/work/app"]) == [
         "C:/work/app",
     ]
+
+
+def test_oversized_exchange_is_bounded_for_llm_prompt():
+    exchange = Exchange(
+        id="exchange_1",
+        session_id="session_1",
+        user_content="x" * 100_000,
+        agent_parts=[],
+    )
+
+    prompt = _format_conversation([exchange])
+
+    assert len(prompt) < 13_000
+    assert "conversation content truncated for prompt size" in prompt
+
+
+def test_oversized_exchange_estimate_is_bounded_for_chunking():
+    exchange = Exchange(
+        id="exchange_1",
+        session_id="session_1",
+        user_content="x" * 100_000,
+        agent_parts=[],
+    )
+
+    assert worker._estimate_exchange_tokens(exchange) < 4_000
 
 
 @pytest.mark.asyncio
