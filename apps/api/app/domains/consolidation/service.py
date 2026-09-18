@@ -66,6 +66,8 @@ async def run_consolidation(
     """
     stats = {
         "near_dup_pairs": 0,
+        "llm_batches": 0,
+        "llm_failed_batches": 0,
         "merged": 0,
         "superseded": 0,
         "kept_both": 0,
@@ -107,6 +109,7 @@ async def run_consolidation(
 
         # Batch pairs for LLM
         batches = [dup_pairs[i:i + PAIRS_PER_LLM_CALL] for i in range(0, len(dup_pairs), PAIRS_PER_LLM_CALL)]
+        stats["llm_batches"] = len(batches)
 
         for batch_idx, batch in enumerate(batches):
             pair_texts = []
@@ -143,6 +146,7 @@ Memory pairs:
                 decisions = _parse_response(response)
                 logger.info("Consolidation batch %d/%d: %d decisions", batch_idx + 1, len(batches), len(decisions))
             except Exception as exc:
+                stats["llm_failed_batches"] += 1
                 logger.error("Consolidation batch %d failed: %s", batch_idx, exc)
                 continue
 
@@ -165,6 +169,11 @@ Memory pairs:
                                 superseded_id, canonical_id, superseded_id)
                 else:
                     stats["kept_both"] += 1
+
+        if stats["llm_failed_batches"] == stats["llm_batches"]:
+            raise RuntimeError(
+                f"All {stats['llm_batches']} consolidation LLM batch(es) failed"
+            )
 
     # ── Sweep 2: Staleness — decayable types untouched > 90 days ─────────
     stale_cutoff = datetime.now(timezone.utc) - timedelta(days=STALENESS_DAYS)
