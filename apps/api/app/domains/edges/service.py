@@ -120,6 +120,7 @@ async def detect_edges(
 
     # Batch pairs for LLM classification
     edges_created = 0
+    failed_batches = 0
     batches = [pair_list[i:i + PAIRS_PER_LLM_CALL] for i in range(0, len(pair_list), PAIRS_PER_LLM_CALL)]
 
     for batch_idx, batch in enumerate(batches):
@@ -155,6 +156,7 @@ Memory pairs:
             raw = _parse_response(response)
             logger.info("Edge detection batch %d/%d: %d raw items", batch_idx + 1, len(batches), len(raw))
         except Exception as exc:
+            failed_batches += 1
             logger.error("Edge detection batch %d failed: %s", batch_idx, exc)
             continue
 
@@ -195,6 +197,11 @@ Memory pairs:
             except Exception as exc:
                 logger.warning("Edge detection: insert failed for %s->%s: %s", source_id, target_id, exc)
 
+    if batches and failed_batches == len(batches):
+        raise RuntimeError(
+            f"All {len(batches)} edge detection LLM batch(es) failed"
+        )
+
     await log_activity(
         db,
         "edge_detection_completed",
@@ -209,4 +216,5 @@ Memory pairs:
         "candidates_scanned": len(pair_list),
         "memories": len(memories),
         "batches": len(batches),
+        "failed_batches": failed_batches,
     }

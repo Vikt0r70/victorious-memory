@@ -218,7 +218,7 @@ async def _enqueue_maintenance_job(kind: str, interval: float) -> bool:
                 exchange_ids=[],
                 kind=kind,
                 status="pending",
-                max_attempts=settings.extraction_max_retries,
+                max_attempts=settings.maintenance_max_attempts,
             )
         )
         await db.commit()
@@ -388,7 +388,11 @@ async def _process_job(job_id: str) -> None:
                         f"Failed after {job.attempts} attempts: {str(exc)[:200]}",
                     )
                 else:
-                    delay = 2 ** job.attempts
+                    delay = (
+                        settings.maintenance_retry_delay_seconds
+                        if job.kind in MAINTENANCE_KINDS
+                        else 2 ** job.attempts
+                    )
                     retry_after = datetime.now(timezone.utc) + timedelta(seconds=delay)
                     await db2.execute(
                         update(ExtractionJob)

@@ -3,14 +3,26 @@
     "mcp": {
         "victorious-memory": {
             "type": "local",
-            "command": ["python", "apps/mcp/server.py"],
+            "command": ["python", "G:\\Projects\\Victorious Memory 2V\\apps\\mcp\\server.py"],
             "enabled": true,
             "timeout": 60000
         },
         "serena": {
             "type": "local",
             "command": ["c:\\users\\vikto\\.local\\bin\\serena.exe", "start-mcp-server", "--project-from-cwd", "--context=claude-code"],
-            "enabled": false,
+            "enabled": true,
+            "timeout": 60000
+        },
+        "graphify": {
+            "type": "local",
+            "command": ["python", "-m", "graphify.serve", "G:/Projects/Victorious Memory 2V/graphify-out/graph.json"],
+            "enabled": true,
+            "timeout": 60000
+        },
+        "cocoindex-code": {
+            "type": "local",
+            "command": ["c:\\users\\vikto\\.local\\bin\\ccc.exe", "mcp"],
+            "enabled": true,
             "timeout": 60000
         }
     },

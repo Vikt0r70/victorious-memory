@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app import worker
+from app.domains.edges import service as edge_service
 from app.domains.ingest.service import _normalize_paths, _sanitize_text
 from app.domains.extraction.agent import _format_conversation
 from app.models import Exchange
@@ -16,6 +17,14 @@ class _ScalarResult:
 
     def scalar_one_or_none(self):
         return self.value
+
+
+class _AllResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
 
 
 @pytest.mark.parametrize(
@@ -80,7 +89,34 @@ async def test_enqueue_maintenance_job_creates_job_when_due():
     job = db.add.call_args.args[0]
     assert job.kind == "consolidation"
     assert job.exchange_id == "exchange_1"
+    assert job.max_attempts == worker.settings.maintenance_max_attempts
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_detect_edges_raises_when_all_llm_batches_fail():
+    """A provider outage must fail the job, not report success with zero edges."""
+    memories = [
+        ("mem_a", "first memory", [0.1, 0.2, 0.3]),
+        ("mem_b", "second memory", [0.1, 0.2, 0.4]),
+    ]
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _AllResult(memories),
+            _AllResult([("mem_b", 0.1)]),
+            _AllResult([("mem_a", 0.1)]),
+        ]
+    )
+    db.commit = AsyncMock()
+
+    outage = AsyncMock(side_effect=RuntimeError("Error 1033: Cloudflare Tunnel error"))
+
+    with patch.object(edge_service.gateway, "complete", outage):
+        with pytest.raises(RuntimeError, match="edge detection LLM batch"):
+            await edge_service.detect_edges(db)
+
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

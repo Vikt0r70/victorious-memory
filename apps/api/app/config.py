@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     maintenance_poll_interval: float = 60.0  # seconds between maintenance scheduling checks
     edge_detection_interval: float = 21600.0  # six hours
     consolidation_interval: float = 86400.0  # one day
+    maintenance_max_attempts: int = 24  # retry across a full day so a temporary tunnel outage self-heals
+    maintenance_retry_delay_seconds: float = 1800.0  # long backoff — a six-hour scan must not burn its retries in seconds
 
     # LLM calls
     llm_timeout_seconds: int = 120  # per-completion timeout — large extraction prompts need well over 30s
