@@ -34,3 +34,10 @@ pres.txt
 extract_code.py
 console.error*
 
+
+# Internal improvement research — not published
+docs/ideas/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+# Graphify knowledge graph artifacts
+graphify-out/

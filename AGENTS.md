@@ -42,6 +42,25 @@ OpenCode ──plugin──▶ /api/ingest ──▶ extraction_jobs ──▶ w
 - **Schema changes** go in `database.py init_db()` as idempotent SQL (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) on top of `create_all` — alembic dirs exist but are NOT used
 - **Auth**: open when `MEMORY_API_KEY`/`MEMORY_TRUSTED_IPS` are unset (local dev); enforced on VPS. Never commit keys.
 
+## Code Navigation Tooling — Serena / ccc / Graphify
+
+Three MCP servers cover different layers. Pick by question type:
+
+| You need...                                        | Use                                              |
+| -------------------------------------------------- | ------------------------------------------------ |
+| Find code by *meaning* ("where do we chunk exchanges?") | `cocoindex-code` MCP → `search` (semantic, ranked `path:line` hits) |
+| Exact symbol work — open, references, edit         | Serena: `get_symbols_overview` → `find_symbol` → `find_referencing_symbols` |
+| Literal string/regex match                         | built-in grep (fastest)                          |
+| Concept-level questions across docs/code           | `graphify` MCP → `query_graph`                   |
+
+**ccc (semantic search):** answers natural-language code questions without knowing file or symbol names — start here for "how/where does X work". CLI equivalent: `ccc search "..."`. The index is incremental and local (`.cocoindex_code/`, gitignored) — run `ccc index` after large refactors or new files to refresh. Known noise: `graphify-out/` artifacts (graph.json, cache, html) rank high on generic queries; mentally filter, or search with more specific wording.
+
+**Serena (precision LSP):** the edit path. Overview first (`get_symbols_overview`), then `find_symbol` with `include_body`, check callers with `find_referencing_symbols` before changing signatures. Edit via `replace_symbol_body` / `replace_content`, never blind line edits. Pre-existing LSP noise exists (dict generics, ModelResponse union) — don't chase it.
+
+**Graphify (corpus KG):** on-demand, not for daily code lookup. Use `/graphify` to (re)build the knowledge graph over a folder, `query_graph` (BFS for broad context, `--dfs` for a specific path) for cross-document concept questions. Rebuild after docs/architecture change: `/graphify <path> --update`.
+
+Rule of thumb: **ccc finds it → Serena opens/edits it → graphify explains it.**
+
 ## Memory System — how to use it
 
 ### MCP tools (victorious-memory, 11 tools)

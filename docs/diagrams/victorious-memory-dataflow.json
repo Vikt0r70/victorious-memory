@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Victorious Memory — Memory Pipeline",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [1072, 520],
+    "output": "victorious-memory-dataflow.html",
+    "views": [
+      { "id": "capture-path", "label": "Capture to queue", "focus": ["opencode", "plugin", "api", "jobs"], "note": "Exchanges are captured locally, flushed over HTTP, and parked as job rows." },
+      { "id": "extraction", "label": "Extraction", "focus": ["jobs", "worker", "llm", "db"], "note": "Chunked model calls produce candidates; the validator gates what is stored." },
+      { "id": "consumption", "label": "Consumption", "focus": ["db", "inject", "readers"], "note": "Hybrid search feeds injection; the dashboard and MCP tools read the store." }
+    ]
+  },
+  "stages": [
+    { "label": "Capture" },
+    { "label": "Ingest" },
+    { "label": "Extract" },
+    { "label": "Store" },
+    { "label": "Consume" }
+  ],
+  "nodes": [
+    { "id": "opencode", "type": "external", "label": "OpenCode", "sublabel": "agent exchanges", "stage": 0, "row": 0 },
+    { "id": "plugin", "type": "frontend", "label": "victorious.js plugin", "sublabel": "capture · flush", "tag": "offline queue", "stage": 0, "row": 1, "width": 150 },
+    { "id": "api", "type": "backend", "brand": "fastapi", "label": "API · /api/ingest", "sublabel": "batch flush", "stage": 1, "row": 1, "width": 150 },
+    { "id": "jobs", "type": "messagebus", "label": "extraction_jobs", "sublabel": "Postgres queue", "stage": 1, "row": 2 },
+    { "id": "llm", "type": "external", "label": "LLM providers", "sublabel": "via litellm", "stage": 2, "row": 0 },
+    { "id": "worker", "type": "backend", "label": "Async worker", "sublabel": "extract · validate", "stage": 2, "row": 1 },
+    { "id": "db", "type": "database", "brand": "postgresql", "label": "memories · edges", "sublabel": "pgvector + BM25", "stage": 3, "row": 1, "width": 150 },
+    { "id": "inject", "type": "backend", "label": "Injected memory block", "sublabel": "/api/context · RRF k=60", "stage": 4, "row": 0, "width": 160 },
+    { "id": "readers", "type": "frontend", "brand": "next-js", "label": "Dashboard & MCP", "sublabel": "review queue · 11 tools", "stage": 4, "row": 2, "width": 150 }
+  ],
+  "flows": [
+    { "id": "captures", "from": "opencode", "to": "plugin", "label": "exchanges", "classification": "raw user + agent text", "labelAt": [100, 200] },
+    { "id": "flush", "from": "plugin", "to": "api", "label": "ingest", "classification": "flushed batches", "variant": "emphasis", "labelAt": [208, 314] },
+    { "id": "enqueue", "from": "api", "to": "jobs", "label": "enqueue", "classification": "job rows", "labelAt": [315, 314] },
+    { "id": "dispatch", "from": "jobs", "to": "worker", "label": "dispatch by kind", "classification": "queue poll" },
+    { "id": "chunked-calls", "from": "worker", "to": "llm", "label": "chunked extraction calls", "classification": "model calls", "labelAt": [530, 214] },
+    { "id": "validated", "from": "worker", "to": "db", "label": "validated memories + edges", "classification": "gated writes", "variant": "emphasis", "labelAt": [638, 314] },
+    { "id": "hybrid-search", "from": "db", "to": "inject", "label": "hybrid search", "classification": "HNSW + BM25 · RRF k=60" },
+    { "id": "read-paths", "from": "db", "to": "readers", "label": "review + tool queries", "classification": "dashboard + 11 MCP tools", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Capture", "items": ["The plugin captures every OpenCode exchange and flushes on boundaries or the 3K-token cap", "When the API is unreachable, batches wait in queue.jsonl and auto-replay", "Ingest only parks rows — no extraction happens on the request path"] },
+    { "dot": "emerald", "title": "Extraction", "items": ["A single asyncio worker drains extraction_jobs and dispatches by the kind column", "Extraction batches are chunked to fit a safe token budget per LLM call", "The validator gates candidates before anything reaches the store"] },
+    { "dot": "violet", "title": "Store & consume", "items": ["PostgreSQL keeps memories and graph edges with pgvector + BM25 indexes", "/api/context ranks with RRF k=60 and the plugin injects the [VICTORIOUS MEMORY] block", "The dashboard reviews the queue; MCP exposes 11 tools to agents"] }
+  ]
+}

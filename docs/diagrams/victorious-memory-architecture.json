@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Victorious Memory — System Architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "victorious-memory-architecture.html",
+    "views": [
+      { "id": "capture-path", "label": "Capture path", "focus": ["opencode", "plugin", "api"], "note": "Every exchange is captured locally and pushed to /api/ingest." },
+      { "id": "pipeline", "label": "Extraction pipeline", "focus": ["api", "jobs", "worker", "providers", "db"], "note": "Jobs drain by kind; chunked LLM calls produce validated memories." },
+      { "id": "readers", "label": "Readers and review", "focus": ["opencode", "mcp", "api", "db", "web"], "note": "Agents query via MCP tools; the dashboard reviews the queue." }
+    ]
+  },
+  "components": [
+    { "id": "opencode", "type": "external", "label": "OpenCode", "sublabel": "agent host", "pos": [40, 320], "size": [150, 62] },
+    { "id": "plugin", "type": "frontend", "label": "victorious.js plugin", "sublabel": "capture · inject", "tag": "offline queue", "pos": [290, 320], "size": [170, 62] },
+    { "id": "mcp", "type": "backend", "label": "MCP server", "sublabel": "JSON-RPC · stdio", "tag": "11 tools", "pos": [290, 130], "size": [165, 62] },
+    { "id": "api", "type": "backend", "brand": "fastapi", "label": "API server", "sublabel": "FastAPI · :8080", "tag": "litellm gateway", "pos": [570, 320], "size": [160, 62] },
+    { "id": "jobs", "type": "messagebus", "label": "extraction_jobs", "sublabel": "Postgres job queue", "pos": [850, 320], "size": [150, 62] },
+    { "id": "worker", "type": "backend", "label": "Async worker", "sublabel": "asyncio job loop", "pos": [1120, 320], "size": [160, 62] },
+    { "id": "providers", "type": "external", "label": "LLM providers", "sublabel": "extraction models", "pos": [990, 130], "size": [150, 62] },
+    { "id": "db", "type": "database", "brand": "postgresql", "label": "PostgreSQL 16", "sublabel": "pgvector · HNSW + BM25", "pos": [1120, 510], "size": [170, 62] },
+    { "id": "web", "type": "frontend", "brand": "next-js", "label": "Dashboard", "sublabel": "Next.js · :3002", "pos": [570, 510], "size": [160, 62] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Local workstation", "wraps": ["opencode", "plugin", "mcp"] },
+    { "kind": "region", "label": "Victorious Stack · Docker Compose", "wraps": ["api", "jobs", "worker", "db", "web"] },
+    { "kind": "security-group", "label": "MEMORY_API_KEY + trusted IPs", "wraps": ["api"] }
+  ],
+  "connections": [
+    { "id": "capture", "from": "opencode", "to": "plugin", "label": "capture · inject" },
+    { "id": "ingest", "from": "plugin", "to": "api", "label": "POST /api/ingest", "variant": "emphasis" },
+    { "id": "tool-calls", "from": "opencode", "to": "mcp", "label": "tool calls", "fromSide": "top", "toSide": "left" },
+    { "id": "mcp-api", "from": "mcp", "to": "api", "label": "search · save · approve", "fromSide": "right", "toSide": "top" },
+    { "id": "enqueue", "from": "api", "to": "jobs", "label": "enqueue" },
+    { "id": "dispatch", "from": "jobs", "to": "worker", "label": "dispatch by kind" },
+    { "id": "extract", "from": "worker", "to": "providers", "label": "extraction calls", "fromSide": "top", "toSide": "bottom" },
+    { "id": "write-memories", "from": "worker", "to": "db", "label": "memories · edges", "fromSide": "bottom", "toSide": "top" },
+    { "id": "hybrid-search", "from": "api", "to": "db", "label": "hybrid search · RRF k=60" },
+    { "id": "review", "from": "web", "to": "api", "label": "review · stats" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Capture & inject", "items": ["Plugin captures every exchange, flushing on boundaries or the 3K-token cap", "Offline queue.jsonl auto-replays when the API is unreachable", "/api/context hybrid search (HNSW + BM25, RRF k=60) feeds the injected [VICTORIOUS MEMORY] block"] },
+    { "dot": "emerald", "title": "Extraction pipeline", "items": ["Worker drains extraction_jobs by kind in a single asyncio loop", "LLM extraction is chunked to fit the token budget; the validator gates candidates", "Edge detection and consolidation run as sibling job kinds"] },
+    { "dot": "rose", "title": "Ops & control", "items": ["Docker Compose deployment with automated rebuild and health checks", "MEMORY_API_KEY / trusted IPs enforced in production", "Next.js dashboard for review; MCP server exposes 11 tools to agents"] }
+  ]
+}
